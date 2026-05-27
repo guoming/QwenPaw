@@ -7,6 +7,7 @@ export const SUPPORTED_SKILL_URL_PREFIXES = [
   "https://lobehub.com/",
   "https://market.lobehub.com/",
   "https://github.com/",
+  "https://gitlab.com/",
   "https://modelscope.cn/skills/",
 ];
 
