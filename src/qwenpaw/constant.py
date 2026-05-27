@@ -110,7 +110,7 @@ SECRET_DIR = (
     .resolve()
 )
 
-PROJECT_NAME = "QwenPaw"
+PROJECT_NAME = "arkbuddy"
 
 # Subdirectory name inside each agent's workspace that holds cloned / imported
 # coding projects.
