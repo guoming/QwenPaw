@@ -213,14 +213,13 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
       <span>{t("nav.inbox")}</span>
     </Badge>
   );
+  const canManageUsers = sessionUser?.isAdmin ?? getIsAdmin();
   // ── Handlers ──────────────────────────────────────────────────────────────
 
   const handleUpdateProfile = async (values: {
     currentPassword: string;
-    newUsername?: string;
     newPassword?: string;
   }) => {
-    const trimmedUsername = values.newUsername?.trim() || undefined;
     const trimmedPassword = values.newPassword?.trim() || undefined;
 
     if (values.newPassword && !trimmedPassword) {
@@ -228,12 +227,7 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
       return;
     }
 
-    if (values.newUsername && !trimmedUsername) {
-      message.error(t("account.usernameEmpty"));
-      return;
-    }
-
-    if (!trimmedUsername && !trimmedPassword) {
+    if (!trimmedPassword) {
       message.warning(t("account.nothingToUpdate"));
       return;
     }
@@ -242,7 +236,7 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
     try {
       await authApi.updateProfile(
         values.currentPassword,
-        trimmedUsername,
+        undefined,
         trimmedPassword,
       );
       message.success(t("account.updateSuccess"));
@@ -396,6 +390,16 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
       path: "/security",
       label: t("nav.security"),
     },
+    ...(canManageUsers
+      ? [
+          {
+            key: "user-management",
+            icon: <SparkUserGroupLine size={18} />,
+            path: "/user-management",
+            label: t("nav.userManagement"),
+          },
+        ]
+      : []),
     {
       key: "token-usage",
       icon: <SparkDataLine size={18} />,
@@ -549,6 +553,15 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
           label: collapsed ? null : t("nav.security"),
           icon: <SparkBrowseLine size={16} />,
         },
+        ...(canManageUsers
+          ? [
+              {
+                key: "user-management",
+                label: collapsed ? null : t("nav.userManagement"),
+                icon: <SparkUserGroupLine size={16} />,
+              },
+            ]
+          : []),
         {
           key: "token-usage",
           label: collapsed ? null : t("nav.tokenUsage"),
@@ -850,9 +863,6 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
             ]}
           >
             <Input.Password />
-          </Form.Item>
-          <Form.Item name="newUsername" label={t("account.newUsername")}>
-            <Input placeholder={t("account.newUsernamePlaceholder")} />
           </Form.Item>
           <Form.Item name="newPassword" label={t("account.newPassword")}>
             <Input.Password placeholder={t("account.newPasswordPlaceholder")} />

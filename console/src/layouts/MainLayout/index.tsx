@@ -37,6 +37,9 @@ const EnvironmentsPage = lazyImportWithRetry(
   "../../pages/Settings/Environments",
 );
 const SecurityPage = lazyImportWithRetry("../../pages/Settings/Security");
+const UserManagementPage = lazyImportWithRetry(
+  "../../pages/Settings/UserManagement",
+);
 const TokenUsagePage = lazyImportWithRetry("../../pages/Settings/TokenUsage");
 const AgentStatsPage = lazyImportWithRetry("../../pages/Settings/AgentStats");
 const VoiceTranscriptionPage = lazyImportWithRetry(
@@ -89,6 +92,7 @@ const pathToKey: Record<string, string> = {
   "/environments": "environments",
   "/agent-config": "agent-config",
   "/security": "security",
+  "/user-management": "user-management",
   "/token-usage": "token-usage",
   "/agent-stats": "agent-stats",
   "/voice-transcription": "voice-transcription",
@@ -196,6 +200,14 @@ export default function MainLayout() {
                     element={
                       <SettingsPageShell>
                         <SecurityPage />
+                      </SettingsPageShell>
+                    }
+                  />
+                  <Route
+                    path="/user-management"
+                    element={
+                      <SettingsPageShell>
+                        <UserManagementPage />
                       </SettingsPageShell>
                     }
                   />

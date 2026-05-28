@@ -16,13 +16,14 @@ import json
 import logging
 import os
 import secrets
+import shutil
 import time
 from typing import Optional
 
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from ..constant import SECRET_DIR, EnvVarLoader
+from ..constant import SECRET_DIR, USERS_DIR, EnvVarLoader
 from ..security.secret_store import (
     AUTH_SECRET_FIELDS,
     decrypt_dict_fields,
@@ -404,6 +405,76 @@ def has_registered_users() -> bool:
     """Return ``True`` if at least one user has been registered."""
     data = _load_auth_data()
     return len(_get_users(data)) > 0
+
+
+def list_users() -> list[dict]:
+    """Return sanitized user records for admin user management."""
+    data = _load_auth_data()
+    if data.get("_auth_load_error"):
+        return []
+    users = _get_users(data)
+    return [
+        {
+            "user_id": u.get("user_id", ""),
+            "username": u.get("username", ""),
+            "is_admin": bool(u.get("is_admin", False)),
+        }
+        for u in users
+    ]
+
+
+def reset_user_password(
+    user_id: str,
+    new_password: str,
+) -> bool:
+    """Reset password for a user by ``user_id`` (admin flow)."""
+    data = _load_auth_data()
+    if data.get("_auth_load_error"):
+        return False
+    users = _get_users(data)
+    user = next((u for u in users if u.get("user_id") == user_id), None)
+    if not user:
+        return False
+    pw_hash, salt = _hash_password(new_password)
+    user["password_hash"] = pw_hash
+    user["password_salt"] = salt
+    # Rotate secret to invalidate all sessions after admin reset.
+    data["jwt_secret"] = secrets.token_hex(32)
+    data["users"] = users
+    _save_auth_data(data)
+    return True
+
+
+def delete_user(
+    user_id: str,
+    *,
+    actor_user_id: str | None = None,
+) -> bool:
+    """Delete a non-admin user and cleanup user data directory."""
+    data = _load_auth_data()
+    if data.get("_auth_load_error"):
+        return False
+    users = _get_users(data)
+    target = next((u for u in users if u.get("user_id") == user_id), None)
+    if not target:
+        return False
+    if target.get("is_admin"):
+        return False
+    if actor_user_id and actor_user_id == user_id:
+        return False
+
+    data["users"] = [u for u in users if u.get("user_id") != user_id]
+    # Rotate secret so deleted user's existing tokens cannot continue.
+    data["jwt_secret"] = secrets.token_hex(32)
+    _save_auth_data(data)
+
+    user_root = USERS_DIR / user_id
+    if user_root.exists():
+        try:
+            shutil.rmtree(user_root)
+        except OSError as exc:
+            logger.warning("Failed to cleanup user directory %s: %s", user_root, exc)
+    return True
 
 
 # ---------------------------------------------------------------------------

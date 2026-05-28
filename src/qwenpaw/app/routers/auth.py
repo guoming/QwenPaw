@@ -7,14 +7,18 @@ from pydantic import BaseModel
 
 from ..auth import (
     authenticate,
+    delete_user,
     has_registered_users,
+    list_users,
     register_user,
+    reset_user_password,
     revoke_all_tokens,
     revoke_token,
     update_credentials,
     verify_token,
     verify_token_payload,
 )
+from ..deps import get_request_user_id, require_admin
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -49,6 +53,12 @@ class VerifyResponse(BaseModel):
     valid: bool
     username: str
     user_id: str
+    is_admin: bool
+
+
+class UserRecord(BaseModel):
+    user_id: str
+    username: str
     is_admin: bool
 
 
@@ -132,6 +142,15 @@ class UpdateProfileRequest(BaseModel):
     expires_in: int | None = (
         None  # Token expiry in seconds, -1/0 for permanent
     )
+
+
+class CreateUserRequest(BaseModel):
+    username: str
+    password: str
+
+
+class ResetUserPasswordRequest(BaseModel):
+    new_password: str
 
 
 @router.post("/update-profile")
@@ -240,3 +259,72 @@ async def revoke_all_sessions(request: Request):
         "message": "All tokens have been revoked. Please login again.",
         "revoked": True,
     }
+
+
+@router.get("/users")
+async def get_users(request: Request) -> list[UserRecord]:
+    """Admin: list users."""
+    require_admin(request)
+    return [UserRecord(**u) for u in list_users()]
+
+
+@router.post("/users")
+async def create_user(req: CreateUserRequest, request: Request) -> UserRecord:
+    """Admin: create a user account."""
+    require_admin(request)
+    username = req.username.strip()
+    password = req.password.strip()
+    if not username or not password:
+        raise HTTPException(
+            status_code=400,
+            detail="Username and password are required",
+        )
+    token = register_user(username, password)
+    if token is None:
+        raise HTTPException(
+            status_code=409,
+            detail="Username already exists",
+        )
+
+    payload = verify_token_payload(token)
+    if payload and payload.get("user_id"):
+        from ..user_agent_registry import seed_all_agents_for_user
+
+        seed_all_agents_for_user(payload["user_id"])
+
+    created = next((u for u in list_users() if u.get("username") == username), None)
+    if not created:
+        raise HTTPException(status_code=500, detail="Failed to create user")
+    return UserRecord(**created)
+
+
+@router.post("/users/{user_id}/password")
+async def admin_reset_password(
+    user_id: str,
+    req: ResetUserPasswordRequest,
+    request: Request,
+):
+    """Admin: reset a user's password."""
+    require_admin(request)
+    new_password = req.new_password.strip()
+    if not new_password:
+        raise HTTPException(status_code=400, detail="Password cannot be empty")
+    if not reset_user_password(user_id, new_password):
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"ok": True}
+
+
+@router.delete("/users/{user_id}")
+async def remove_user(user_id: str, request: Request):
+    """Admin: delete a non-admin user."""
+    require_admin(request)
+    actor_user_id = get_request_user_id(request)
+    if not delete_user(user_id, actor_user_id=actor_user_id):
+        users = list_users()
+        target = next((u for u in users if u.get("user_id") == user_id), None)
+        if target and target.get("is_admin"):
+            raise HTTPException(status_code=400, detail="Cannot delete admin user")
+        if actor_user_id == user_id:
+            raise HTTPException(status_code=400, detail="Cannot delete yourself")
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"ok": True}
