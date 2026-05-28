@@ -32,6 +32,9 @@ import ChatSessionInitializer from "./components/ChatSessionInitializer";
 import ChatSubmitSessionGuard, {
   runEnsureSessionBeforeSubmit,
 } from "./components/ChatSubmitSessionGuard";
+import WelcomeWithSessionEnsure, {
+  type WelcomeRenderProps,
+} from "./components/WelcomeWithSessionEnsure";
 import { ApprovalCard } from "../../components/ApprovalCard/ApprovalCard";
 import { commandsApi } from "../../api/modules/commands";
 import { useApprovalContext } from "../../contexts/ApprovalContext";
@@ -1265,6 +1268,15 @@ export default function ChatPage() {
         ...i18nConfig.welcome,
         nick: "QwenPaw",
         avatar: "/qwenpaw.png",
+        render: (welcomeProps: WelcomeRenderProps) => (
+          <WelcomeWithSessionEnsure
+            greeting={welcomeProps.greeting}
+            description={welcomeProps.description}
+            avatar={welcomeProps.avatar}
+            prompts={welcomeProps.prompts}
+            onSubmit={welcomeProps.onSubmit}
+          />
+        ),
       },
       sender: {
         ...(i18nConfig as any)?.sender,
