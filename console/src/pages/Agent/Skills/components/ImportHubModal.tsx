@@ -60,11 +60,8 @@ function validateUrl(url: string): ValidationResult {
       inputPath.startsWith(parsedPrefix.pathname.toLowerCase())
     );
   });
-  if (!source) {
-    return { ok: false, messageKey: "skills.invalidSkillUrlSource" };
-  }
 
-  return { ok: true, source: source.name };
+  return { ok: true, source: source?.name ?? parsedInput.host };
 }
 
 export function ImportHubModal({
