@@ -29,6 +29,9 @@ import { IconButton } from "@agentscope-ai/design";
 import ChatActionGroup from "./components/ChatActionGroup";
 import ChatHeaderTitle from "./components/ChatHeaderTitle";
 import ChatSessionInitializer from "./components/ChatSessionInitializer";
+import ChatSubmitSessionGuard, {
+  runEnsureSessionBeforeSubmit,
+} from "./components/ChatSubmitSessionGuard";
 import { ApprovalCard } from "../../components/ApprovalCard/ApprovalCard";
 import { commandsApi } from "../../api/modules/commands";
 import { useApprovalContext } from "../../contexts/ApprovalContext";
@@ -1086,6 +1089,21 @@ export default function ChatPage() {
         return buildModelError();
       }
 
+      if (!window.currentSessionId) {
+        try {
+          await runEnsureSessionBeforeSubmit();
+        } catch (error) {
+          console.error("Failed to ensure chat session before fetch:", error);
+          return new Response(
+            JSON.stringify({
+              error: "session_not_ready",
+              message: "Failed to initialize chat session",
+            }),
+            { status: 500, headers: { "Content-Type": "application/json" } },
+          );
+        }
+      }
+
       const { input = [], biz_params } = data;
       const session: SessionInfo = input[input.length - 1]?.session || {};
       const lastInput = input.slice(-1);
@@ -1214,6 +1232,12 @@ export default function ChatPage() {
 
     const handleBeforeSubmit = async () => {
       if (isComposingRef.current) return false;
+      try {
+        await runEnsureSessionBeforeSubmit();
+      } catch (error) {
+        console.error("Failed to ensure chat session before submit:", error);
+        return false;
+      }
       return true;
     };
 
@@ -1228,6 +1252,7 @@ export default function ChatPage() {
         rightHeader: (
           <>
             <ChatSessionInitializer />
+            <ChatSubmitSessionGuard />
             <RuntimeLoadingBridge bridgeRef={runtimeLoadingBridgeRef} />
             <ChatHeaderTitle />
             <span style={{ flex: 1 }} />

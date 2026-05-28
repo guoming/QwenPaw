@@ -72,15 +72,16 @@ describe("AgentSelector", () => {
     await waitFor(() => expect(mockListAgents).toHaveBeenCalled());
   });
 
+  it("renders empty-state create button when agent list is empty", async () => {
+    mockListAgents.mockResolvedValue({ agents: [] });
+    renderWithProviders(<AgentSelector />);
+    await waitFor(() => expect(mockListAgents).toHaveBeenCalled());
+    expect(screen.getByText("agent.createFirstAgent")).toBeInTheDocument();
+  });
+
   it("does not expose management entry in selector dropdown", async () => {
     renderWithProviders(<AgentSelector />);
     await waitFor(() => expect(mockListAgents).toHaveBeenCalled());
-
-    const combo = screen.getByRole("combobox");
-    combo.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
-
-    await waitFor(() => {
-      expect(screen.queryByText("agent.management")).not.toBeInTheDocument();
-    });
+    expect(screen.queryByText("agent.management")).not.toBeInTheDocument();
   });
 });

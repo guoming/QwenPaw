@@ -9,8 +9,13 @@ from typing import Optional, TYPE_CHECKING
 from fastapi import Request
 from .multi_agent_manager import MultiAgentManager
 from ..config.config import load_agent_config, save_agent_config
+from ..config.context import set_current_user_id
 from ..config.utils import load_config
 from .deps import get_request_user_id
+from .user_agent_registry import (
+    agent_available_for_user,
+    is_agent_enabled_for_user,
+)
 
 if TYPE_CHECKING:
     from .workspace import Workspace
@@ -76,17 +81,16 @@ async def get_agent_for_request(
         config = load_config()
         target_agent_id = config.agents.active_agent or "default"
 
-    # Check if agent exists and is enabled
-    if config is None:
-        config = load_config()
-    if target_agent_id not in config.agents.profiles:
+    user_id = get_request_user_id(request)
+    set_current_user_id(user_id)
+
+    if not agent_available_for_user(user_id, target_agent_id):
         raise HTTPException(
             status_code=404,
             detail=f"Agent '{target_agent_id}' not found",
         )
 
-    agent_ref = config.agents.profiles[target_agent_id]
-    if not getattr(agent_ref, "enabled", True):
+    if not is_agent_enabled_for_user(user_id, target_agent_id):
         raise HTTPException(
             status_code=403,
             detail=f"Agent '{target_agent_id}' is disabled",
@@ -100,8 +104,6 @@ async def get_agent_for_request(
         )
 
     manager: MultiAgentManager = request.app.state.multi_agent_manager
-
-    user_id = get_request_user_id(request)
 
     try:
         workspace = await manager.get_agent(

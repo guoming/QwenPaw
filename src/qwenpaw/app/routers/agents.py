@@ -9,8 +9,17 @@ import logging
 from pathlib import Path
 from fastapi import APIRouter, Body, HTTPException, Request
 
-from ..deps import require_admin
-from ..user_agent_registry import purge_agent_for_all_users, seed_user_for_all_users
+from ..deps import get_request_user_id, require_admin
+from ..user_agent_registry import (
+    list_user_agent_ids,
+    provision_private_agent_from_template,
+    purge_agent_for_all_users,
+    purge_user_private_agent,
+    resolve_user_workspace_dir,
+    seed_agent_for_user,
+    seed_user_for_all_users,
+    user_owns_agent,
+)
 from fastapi import Path as PathParam
 from pydantic import BaseModel, field_validator
 
@@ -39,6 +48,7 @@ from ...constant import WORKING_DIR
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/agents", tags=["agents"])
+templates_router = APIRouter(prefix="/agent-templates", tags=["agents"])
 
 
 class AgentSummary(BaseModel):
@@ -62,6 +72,21 @@ class ReorderAgentsRequest(BaseModel):
     """Request model for persisting agent order."""
 
     agent_ids: list[str]
+
+
+class AgentTemplateSummary(BaseModel):
+    """Agent template summary information."""
+
+    id: str
+    name: str
+    description: str
+    enabled: bool
+
+
+class AgentTemplateListResponse(BaseModel):
+    """Response for listing agent templates."""
+
+    templates: list[AgentTemplateSummary]
 
 
 class CreateAgentRequest(BaseModel):
@@ -101,6 +126,24 @@ class CreateAgentRequest(BaseModel):
             stripped = value.strip()
             return stripped if stripped else None
         return value
+
+
+class CreateAgentFromTemplateRequest(BaseModel):
+    """Request model for provisioning a private user agent from template."""
+
+    template_agent_id: str
+    name: str | None = None
+    description: str | None = None
+    workspace_dir: str | None = None
+    skill_names: list[str] | None = None
+    active_model: ModelSlotConfig | None = None
+
+
+class UpdatePrivateAgentRequest(BaseModel):
+    """Update metadata for a user-owned private agent."""
+
+    name: str | None = None
+    description: str | None = None
 
 
 def _get_multi_agent_manager(request: Request) -> MultiAgentManager:
@@ -166,14 +209,17 @@ def _read_profile_description(workspace_dir: str) -> str:
 async def list_agents(request: Request) -> AgentListResponse:
     """List all configured agents."""
     config = load_config()
-    ordered_agent_ids = _normalized_agent_order(config)
     auth_user_id = getattr(request.state, "user_id", None)
     is_admin = bool(getattr(request.state, "is_admin", False))
+    if is_admin:
+        ordered_agent_ids = _normalized_agent_order(config)
+    else:
+        ordered_agent_ids = list_user_agent_ids(auth_user_id) if auth_user_id else []
     config_user_id = None if is_admin else auth_user_id
 
     agents = []
     for agent_id in ordered_agent_ids:
-        agent_ref = config.agents.profiles[agent_id]
+        agent_ref = config.agents.profiles.get(agent_id)
         try:
             agent_config = load_agent_config(
                 agent_id,
@@ -181,26 +227,52 @@ async def list_agents(request: Request) -> AgentListResponse:
             )
             description = agent_config.description or ""
 
-            profile_desc = _read_profile_description(agent_ref.workspace_dir)
-            if profile_desc:
-                if description.strip():
-                    description = f"{description.strip()} | {profile_desc}"
-                else:
-                    description = profile_desc
+            template_ws_dir = None
+            if agent_ref is not None:
+                template_ws_dir = agent_ref.workspace_dir
+            elif agent_config.template_id:
+                template_ref = config.agents.profiles.get(
+                    agent_config.template_id,
+                )
+                if template_ref is not None:
+                    template_ws_dir = template_ref.workspace_dir
+
+            if template_ws_dir:
+                profile_desc = _read_profile_description(template_ws_dir)
+                if profile_desc:
+                    if description.strip():
+                        description = f"{description.strip()} | {profile_desc}"
+                    else:
+                        description = profile_desc
 
             active_model = agent_config.active_model
+            if agent_ref is not None:
+                workspace_dir = agent_ref.workspace_dir
+                enabled = getattr(agent_ref, "enabled", True)
+            else:
+                workspace_dir = agent_config.workspace_dir or str(
+                    resolve_user_workspace_dir(auth_user_id, agent_id),
+                )
+                enabled = True
 
             agents.append(
                 AgentSummary(
                     id=agent_id,
                     name=agent_config.name,
                     description=description,
-                    workspace_dir=agent_ref.workspace_dir,
-                    enabled=getattr(agent_ref, "enabled", True),
+                    workspace_dir=workspace_dir,
+                    enabled=enabled,
                     active_model=active_model,
                 ),
             )
         except Exception:  # noqa: E722
+            if agent_ref is None:
+                logger.warning(
+                    "Skip unknown user agent id '%s' for user '%s'",
+                    agent_id,
+                    auth_user_id,
+                )
+                continue
             agents.append(
                 AgentSummary(
                     id=agent_id,
@@ -212,6 +284,51 @@ async def list_agents(request: Request) -> AgentListResponse:
             )
 
     return AgentListResponse(agents=agents)
+
+
+@templates_router.get(
+    "",
+    response_model=AgentTemplateListResponse,
+    summary="List enabled agent templates",
+    description="Get enabled templates that users can provision",
+)
+async def list_agent_templates(request: Request) -> AgentTemplateListResponse:
+    """List enabled templates for self-provisioning."""
+    _ = get_request_user_id(request)
+    config = load_config()
+    templates: list[AgentTemplateSummary] = []
+    for agent_id in _normalized_agent_order(config):
+        agent_ref = config.agents.profiles.get(agent_id)
+        if not agent_ref or not getattr(agent_ref, "enabled", True):
+            continue
+        try:
+            template_cfg = load_agent_config(agent_id, user_id=None)
+            description = template_cfg.description or ""
+            profile_desc = _read_profile_description(agent_ref.workspace_dir)
+            if profile_desc:
+                description = (
+                    f"{description.strip()} | {profile_desc}"
+                    if description.strip()
+                    else profile_desc
+                )
+            templates.append(
+                AgentTemplateSummary(
+                    id=agent_id,
+                    name=template_cfg.name,
+                    description=description,
+                    enabled=True,
+                ),
+            )
+        except Exception:  # noqa: E722
+            templates.append(
+                AgentTemplateSummary(
+                    id=agent_id,
+                    name=agent_id.title(),
+                    description="",
+                    enabled=True,
+                ),
+            )
+    return AgentTemplateListResponse(templates=templates)
 
 
 @router.put(
@@ -257,8 +374,6 @@ async def get_agent(
     agentId: str = PathParam(...),
 ) -> AgentProfileConfig:
     """Get agent configuration for the authenticated user."""
-    from ..deps import get_request_user_id
-
     try:
         user_id = get_request_user_id(request)
         agent_config = load_agent_config(agentId, user_id=user_id)
@@ -371,6 +486,164 @@ async def create_agent(
     logger.info(f"Created new agent: {new_id} (name={request.name})")
 
     return agent_ref
+
+
+@router.post(
+    "/from-template",
+    response_model=AgentSummary,
+    status_code=201,
+    summary="Create private agent from template",
+    description="Provision a private user copy from an enabled template",
+)
+async def create_agent_from_template(
+    request: Request,
+    payload: CreateAgentFromTemplateRequest = Body(...),
+) -> AgentSummary:
+    """Provision the current user's private agent copy from template."""
+    user_id = get_request_user_id(request)
+    config = load_config()
+    template_id = payload.template_agent_id
+
+    if template_id not in config.agents.profiles:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Template agent '{template_id}' not found",
+        )
+    template_ref = config.agents.profiles[template_id]
+    if not getattr(template_ref, "enabled", True):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Template agent '{template_id}' is disabled",
+        )
+    try:
+        private_id = provision_private_agent_from_template(user_id, template_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    user_cfg = load_agent_config(private_id, user_id=user_id)
+    if payload.name is not None:
+        user_cfg.name = payload.name
+    if payload.description is not None:
+        user_cfg.description = payload.description
+    if payload.workspace_dir is not None:
+        user_cfg.workspace_dir = payload.workspace_dir
+    if payload.active_model is not None:
+        user_cfg.active_model = payload.active_model
+    save_agent_config(private_id, user_cfg, user_id=user_id)
+
+    if payload.skill_names:
+        _install_initial_skills(
+            resolve_user_workspace_dir(user_id, private_id),
+            payload.skill_names,
+        )
+
+    description = user_cfg.description or ""
+    profile_desc = _read_profile_description(template_ref.workspace_dir)
+    if profile_desc:
+        description = (
+            f"{description.strip()} | {profile_desc}"
+            if description.strip()
+            else profile_desc
+        )
+
+    user_ws = resolve_user_workspace_dir(user_id, private_id)
+    return AgentSummary(
+        id=private_id,
+        name=user_cfg.name,
+        description=description,
+        workspace_dir=str(user_ws),
+        enabled=getattr(template_ref, "enabled", True),
+        active_model=user_cfg.active_model,
+    )
+
+
+def _private_agent_summary(
+    user_id: str,
+    agent_id: str,
+    *,
+    config=None,
+) -> AgentSummary:
+    """Build list response entry for a user-owned private agent."""
+    if config is None:
+        config = load_config()
+    user_cfg = load_agent_config(agent_id, user_id=user_id)
+    description = user_cfg.description or ""
+    template_ref = None
+    if user_cfg.template_id:
+        template_ref = config.agents.profiles.get(user_cfg.template_id)
+    if template_ref is not None:
+        profile_desc = _read_profile_description(template_ref.workspace_dir)
+        if profile_desc:
+            description = (
+                f"{description.strip()} | {profile_desc}"
+                if description.strip()
+                else profile_desc
+            )
+    user_ws = resolve_user_workspace_dir(user_id, agent_id)
+    return AgentSummary(
+        id=agent_id,
+        name=user_cfg.name,
+        description=description,
+        workspace_dir=str(user_ws),
+        enabled=True,
+        active_model=user_cfg.active_model,
+    )
+
+
+@router.patch(
+    "/{agentId}/self",
+    response_model=AgentSummary,
+    summary="Update private agent",
+    description="Update the current user's private agent metadata",
+)
+async def update_private_agent(
+    request: Request,
+    agentId: str = PathParam(...),
+    payload: UpdatePrivateAgentRequest = Body(...),
+) -> AgentSummary:
+    """Update name/description for a user-owned private agent."""
+    user_id = get_request_user_id(request)
+    if not user_owns_agent(user_id, agentId):
+        raise HTTPException(
+            status_code=404,
+            detail=f"Agent '{agentId}' not found",
+        )
+
+    user_cfg = load_agent_config(agentId, user_id=user_id)
+    if payload.name is not None:
+        user_cfg.name = payload.name
+    if payload.description is not None:
+        user_cfg.description = payload.description
+    save_agent_config(agentId, user_cfg, user_id=user_id)
+    schedule_agent_reload(request, agentId)
+    return _private_agent_summary(user_id, agentId)
+
+
+@router.delete(
+    "/{agentId}/self",
+    summary="Delete private agent",
+    description="Delete the current user's private agent instance",
+)
+async def delete_private_agent(
+    request: Request,
+    agentId: str = PathParam(...),
+) -> dict:
+    """Remove a user-owned private agent and its workspace data."""
+    user_id = get_request_user_id(request)
+    if not user_owns_agent(user_id, agentId):
+        raise HTTPException(
+            status_code=404,
+            detail=f"Agent '{agentId}' not found",
+        )
+
+    manager = _get_multi_agent_manager(request)
+    await manager.stop_agent(agentId, user_id=user_id)
+    try:
+        purge_user_private_agent(user_id, agentId)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    return {"success": True, "agent_id": agentId}
 
 
 @router.put(

@@ -1,8 +1,12 @@
 import { request } from "../request";
 import type {
   AgentListResponse,
+  AgentSummary,
+  AgentTemplateListResponse,
   AgentProfileConfig,
   CreateAgentRequest,
+  CreateAgentFromTemplateRequest,
+  UpdatePrivateAgentRequest,
   AgentProfileRef,
   ReorderAgentsResponse,
 } from "../types/agents";
@@ -11,6 +15,10 @@ import type {
 export const agentsApi = {
   // List all agents
   listAgents: () => request<AgentListResponse>("/agents"),
+
+  // List enabled templates for self-provisioning
+  listAgentTemplates: () =>
+    request<AgentTemplateListResponse>("/agent-templates"),
 
   // Get agent details
   getAgent: (agentId: string) =>
@@ -21,6 +29,24 @@ export const agentsApi = {
     request<AgentProfileRef>("/agents", {
       method: "POST",
       body: JSON.stringify(agent),
+    }),
+
+  // Create private agent from template
+  createAgentFromTemplate: (payload: CreateAgentFromTemplateRequest) =>
+    request<AgentSummary>("/agents/from-template", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  updatePrivateAgent: (agentId: string, payload: UpdatePrivateAgentRequest) =>
+    request<AgentSummary>(`/agents/${agentId}/self`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+
+  deletePrivateAgent: (agentId: string) =>
+    request<{ success: boolean; agent_id: string }>(`/agents/${agentId}/self`, {
+      method: "DELETE",
     }),
 
   // Update agent configuration

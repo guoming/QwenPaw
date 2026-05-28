@@ -1987,9 +1987,21 @@ def load_agent_config(  # pylint: disable=too-many-branches,too-many-statements
         _agent_config_lock,
     )
 
+    from .context import get_current_user_id
+
+    effective_user_id = user_id if user_id is not None else get_current_user_id()
+
     config = load_config()
+    agent_config_path = resolve_agent_config_path(
+        agent_id,
+        user_id=effective_user_id,
+    )
 
     if agent_id not in config.agents.profiles:
+        if effective_user_id and agent_config_path.is_file():
+            with open(agent_config_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return AgentProfileConfig(**data)
         raise ConfigurationException(
             config_key="agent",
             message=f"Agent '{agent_id}' not found in config",
@@ -1997,9 +2009,8 @@ def load_agent_config(  # pylint: disable=too-many-branches,too-many-statements
 
     agent_ref = config.agents.profiles[agent_id]
     workspace_dir = Path(agent_ref.workspace_dir).expanduser()
-    agent_config_path = resolve_agent_config_path(agent_id, user_id=user_id)
 
-    if user_id and not agent_config_path.exists():
+    if effective_user_id and not agent_config_path.exists():
         import shutil
 
         template_path = resolve_agent_config_path(agent_id, user_id=None)
@@ -2014,14 +2025,14 @@ def load_agent_config(  # pylint: disable=too-many-branches,too-many-statements
             save_agent_config(
                 agent_id,
                 fallback_config,
-                user_id=user_id,
+                user_id=effective_user_id,
             )
             return fallback_config
 
     if not agent_config_path.exists():
         fallback_config = build_fallback_agent_profile_config(agent_id, config)
         # Save for future use
-        save_agent_config(agent_id, fallback_config, user_id=user_id)
+        save_agent_config(agent_id, fallback_config, user_id=effective_user_id)
         return fallback_config
 
     # Check mtime to see if we can use cached config
@@ -2029,10 +2040,10 @@ def load_agent_config(  # pylint: disable=too-many-branches,too-many-statements
         current_mtime = agent_config_path.stat().st_mtime
     except OSError:
         fallback_config = build_fallback_agent_profile_config(agent_id, config)
-        save_agent_config(agent_id, fallback_config, user_id=user_id)
+        save_agent_config(agent_id, fallback_config, user_id=effective_user_id)
         return fallback_config
 
-    cache_key = agent_config_cache_key(agent_id, user_id)
+    cache_key = agent_config_cache_key(agent_id, effective_user_id)
 
     with _agent_config_lock:
         # Return cached config if mtime hasn't changed
@@ -2140,15 +2151,21 @@ def save_agent_config(
         _agent_config_lock,
     )
 
-    config = load_config()
+    from .context import get_current_user_id
 
-    if agent_id not in config.agents.profiles:
+    effective_user_id = user_id if user_id is not None else get_current_user_id()
+
+    config = load_config()
+    agent_config_path = resolve_agent_config_path(
+        agent_id,
+        user_id=effective_user_id,
+    )
+
+    if agent_id not in config.agents.profiles and not effective_user_id:
         raise ConfigurationException(
             config_key="agent",
             message=f"Agent '{agent_id}' not found in config",
         )
-
-    agent_config_path = resolve_agent_config_path(agent_id, user_id=user_id)
     agent_config_path.parent.mkdir(parents=True, exist_ok=True)
 
     with open(agent_config_path, "w", encoding="utf-8") as f:
@@ -2160,7 +2177,7 @@ def save_agent_config(
         )
 
     # Invalidate cache after saving
-    cache_key = agent_config_cache_key(agent_id, user_id)
+    cache_key = agent_config_cache_key(agent_id, effective_user_id)
     with _agent_config_lock:
         if cache_key in _agent_config_cache:
             del _agent_config_cache[cache_key]

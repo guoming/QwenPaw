@@ -82,6 +82,43 @@ def list_all_user_ids() -> list[str]:
     return [p.name for p in users_dir.iterdir() if p.is_dir()]
 
 
+def user_owns_agent(user_id: str | None, agent_id: str) -> bool:
+    """Return True if *agent_id* is provisioned under *user_id*."""
+    if not user_id:
+        return False
+    return agent_id in set(list_user_agent_ids(user_id))
+
+
+def agent_available_for_user(user_id: str | None, agent_id: str) -> bool:
+    """Return True if *agent_id* is a global template or owned by *user_id*."""
+    config = load_config()
+    if agent_id in config.agents.profiles:
+        return True
+    return user_owns_agent(user_id, agent_id)
+
+
+def is_agent_enabled_for_user(user_id: str | None, agent_id: str) -> bool:
+    """Return whether *agent_id* may run for *user_id*."""
+    config = load_config()
+    if agent_id in config.agents.profiles:
+        return getattr(config.agents.profiles[agent_id], "enabled", True)
+    return user_owns_agent(user_id, agent_id)
+
+
+def list_user_agent_ids(user_id: str) -> list[str]:
+    """Return agent IDs that have user-owned config copies."""
+    cfg_root = constant.USERS_DIR / user_id / "agent_configs"
+    if not cfg_root.is_dir():
+        return []
+    ids: list[str] = []
+    for agent_dir in sorted(cfg_root.iterdir()):
+        if not agent_dir.is_dir():
+            continue
+        if (agent_dir / "agent.json").is_file():
+            ids.append(agent_dir.name)
+    return ids
+
+
 def seed_agent_for_user(user_id: str, agent_id: str) -> None:
     """Copy global agent template into the user's config directory."""
     dest = resolve_agent_config_path(agent_id, user_id=user_id)
@@ -114,6 +151,57 @@ def seed_agent_for_user(user_id: str, agent_id: str) -> None:
     logger.debug("Seeded agent %s for user %s", agent_id, user_id)
 
 
+def _generate_unique_user_agent_id(existing_ids: set[str]) -> str:
+    """Return a private agent id (``u_<shortid>``) not in *existing_ids*."""
+    from ..config.config import generate_short_agent_id
+
+    for _ in range(32):
+        candidate = f"u_{generate_short_agent_id()}"
+        if candidate not in existing_ids:
+            return candidate
+    raise RuntimeError("Failed to generate unique user agent id")
+
+
+def provision_private_agent_from_template(
+    user_id: str,
+    template_agent_id: str,
+) -> str:
+    """Copy a global template into a new user-owned agent instance."""
+    from ..config.config import load_agent_config, save_agent_config
+
+    config = load_config()
+    if template_agent_id not in config.agents.profiles:
+        raise ValueError(f"Unknown template agent: {template_agent_id}")
+
+    reserved = set(config.agents.profiles.keys()) | set(list_user_agent_ids(user_id))
+    new_id = _generate_unique_user_agent_id(reserved)
+
+    template_cfg = load_agent_config(template_agent_id, user_id=None)
+    user_ws = resolve_user_workspace_dir(user_id, new_id)
+    template_dir = Path(
+        config.agents.profiles[template_agent_id].workspace_dir,
+    ).expanduser()
+
+    new_cfg = template_cfg.model_copy(deep=True)
+    new_cfg.id = new_id
+    new_cfg.template_id = template_agent_id
+    new_cfg.workspace_dir = str(user_ws)
+
+    save_agent_config(new_id, new_cfg, user_id=user_id)
+
+    data_dir = constant.USERS_DIR / user_id / "agent_data" / new_id
+    data_dir.mkdir(parents=True, exist_ok=True)
+    seed_user_workspace_from_template(user_ws, template_dir, template_agent_id)
+
+    logger.debug(
+        "Provisioned private agent %s from template %s for user %s",
+        new_id,
+        template_agent_id,
+        user_id,
+    )
+    return new_id
+
+
 def seed_all_agents_for_user(user_id: str) -> None:
     """Seed all configured agents for a newly registered user."""
     for agent_id in load_config().agents.profiles:
@@ -124,6 +212,19 @@ def seed_user_for_all_users(agent_id: str) -> None:
     """Seed a new global agent for every existing user."""
     for uid in list_all_user_ids():
         seed_agent_for_user(uid, agent_id)
+
+
+def purge_user_private_agent(user_id: str, agent_id: str) -> None:
+    """Remove one user-owned private agent instance and its data."""
+    if not user_owns_agent(user_id, agent_id):
+        raise ValueError(f"Agent '{agent_id}' not found for user")
+    for sub in ("agent_configs", "agent_data", "agent_workspaces"):
+        path = constant.USERS_DIR / user_id / sub / agent_id
+        if path.is_dir():
+            shutil.rmtree(path)
+        elif path.is_file():
+            path.unlink(missing_ok=True)
+    logger.debug("Purged private agent %s for user %s", agent_id, user_id)
 
 
 def purge_agent_for_all_users(agent_id: str) -> None:
@@ -137,6 +238,32 @@ def purge_agent_for_all_users(agent_id: str) -> None:
                 path.unlink(missing_ok=True)
 
 
+def resolve_user_agent_template_workspace_dir(
+    user_id: str,
+    agent_id: str,
+) -> Path | None:
+    """Return the global template workspace used to seed a user-private agent."""
+    import json
+
+    cfg_path = resolve_agent_config_path(agent_id, user_id=user_id)
+    if not cfg_path.is_file():
+        return None
+    with open(cfg_path, encoding="utf-8") as f:
+        data = json.load(f)
+    template_id = data.get("template_id")
+    config = load_config()
+    if template_id and template_id in config.agents.profiles:
+        return Path(
+            config.agents.profiles[template_id].workspace_dir,
+        ).expanduser()
+    workspace_dir = data.get("workspace_dir")
+    if workspace_dir:
+        return Path(workspace_dir).expanduser()
+    return None
+
+
 def ensure_user_agent_copy(user_id: str, agent_id: str) -> None:
     """Ensure the user has a config copy (lazy seed)."""
+    if resolve_agent_config_path(agent_id, user_id=user_id).exists():
+        return
     seed_agent_for_user(user_id, agent_id)

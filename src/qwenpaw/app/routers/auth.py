@@ -90,12 +90,9 @@ async def register(req: RegisterRequest):
         )
 
     from ..auth import verify_token_payload
-    from ..user_agent_registry import seed_all_agents_for_user
 
     payload = verify_token_payload(token)
     if payload and payload.get("user_id"):
-        uid = payload["user_id"]
-        seed_all_agents_for_user(uid)
         from ..user_migration import migrate_legacy_to_admin_user
 
         migrate_legacy_to_admin_user()
@@ -285,12 +282,6 @@ async def create_user(req: CreateUserRequest, request: Request) -> UserRecord:
             status_code=409,
             detail="Username already exists",
         )
-
-    payload = verify_token_payload(token)
-    if payload and payload.get("user_id"):
-        from ..user_agent_registry import seed_all_agents_for_user
-
-        seed_all_agents_for_user(payload["user_id"])
 
     created = next((u for u in list_users() if u.get("username") == username), None)
     if not created:
