@@ -214,6 +214,19 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
     </Badge>
   );
   const canManageUsers = sessionUser?.isAdmin ?? getIsAdmin();
+  const adminOnlyMenuKeys = new Set([
+    "agents",
+    "models",
+    "skill-pool",
+    "market",
+    "environments",
+    "security",
+    "user-management",
+    "backups",
+    "debug",
+    "plugin-manager",
+    "voice-transcription",
+  ]);
   // ── Handlers ──────────────────────────────────────────────────────────────
 
   const handleUpdateProfile = async (values: {
@@ -437,7 +450,7 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
       path: route.path,
       label: route.label,
     })),
-  ];
+  ].filter((item) => canManageUsers || !adminOnlyMenuKeys.has(item.key));
 
   // ── Menu items — agent-scoped (Chat + Control + Workspace) ──────────────
 
@@ -518,76 +531,78 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
 
   // ── Menu items — global settings ──────────────────────────────────────
 
+  const settingsMenuChildren: NonNullable<MenuProps["items"]>[number][] = [
+    {
+      key: "agents",
+      label: collapsed ? null : t("nav.agents"),
+      icon: <SparkAgentLine size={16} />,
+    },
+    {
+      key: "models",
+      label: collapsed ? null : t("nav.models"),
+      icon: <SparkModePlazaLine size={16} />,
+    },
+    {
+      key: "skill-pool",
+      label: collapsed ? null : t("nav.skillPool", "Skill Pool"),
+      icon: <SparkOtherLine size={16} />,
+    },
+    {
+      key: "market",
+      label: collapsed ? null : t("nav.market", "Skill Market"),
+      icon: <SparkCardLine size={16} />,
+    },
+    {
+      key: "environments",
+      label: collapsed ? null : t("nav.environments"),
+      icon: <SparkInternetLine size={16} />,
+    },
+    {
+      key: "security",
+      label: collapsed ? null : t("nav.security"),
+      icon: <SparkBrowseLine size={16} />,
+    },
+    ...(canManageUsers
+      ? [
+          {
+            key: "user-management",
+            label: collapsed ? null : t("nav.userManagement"),
+            icon: <SparkUserGroupLine size={16} />,
+          },
+        ]
+      : []),
+    {
+      key: "token-usage",
+      label: collapsed ? null : t("nav.tokenUsage"),
+      icon: <SparkDataLine size={16} />,
+    },
+    {
+      key: "backups",
+      label: collapsed ? null : t("nav.backups"),
+      icon: <SparkSaveLine size={16} />,
+    },
+    {
+      key: "voice-transcription",
+      label: collapsed ? null : t("nav.voiceTranscription"),
+      icon: <SparkMicLine size={16} />,
+    },
+    {
+      key: "debug",
+      label: collapsed ? null : t("nav.debug", "Debug"),
+      icon: <SparkDebugLine size={16} />,
+    },
+    {
+      key: "plugin-manager",
+      label: collapsed ? null : t("nav.pluginManager", "Plugin Manager"),
+      icon: <Package size={16} />,
+    },
+  ].filter((item) => canManageUsers || !adminOnlyMenuKeys.has(String(item?.key)));
+
   const settingsMenuItems: MenuProps["items"] = [
     {
       key: "settings-group",
       label: collapsed ? null : t("nav.settings"),
-      children: [
-        {
-          key: "agents",
-          label: collapsed ? null : t("nav.agents"),
-          icon: <SparkAgentLine size={16} />,
-        },
-        {
-          key: "models",
-          label: collapsed ? null : t("nav.models"),
-          icon: <SparkModePlazaLine size={16} />,
-        },
-        {
-          key: "skill-pool",
-          label: collapsed ? null : t("nav.skillPool", "Skill Pool"),
-          icon: <SparkOtherLine size={16} />,
-        },
-        {
-          key: "market",
-          label: collapsed ? null : t("nav.market", "Skill Market"),
-          icon: <SparkCardLine size={16} />,
-        },
-        {
-          key: "environments",
-          label: collapsed ? null : t("nav.environments"),
-          icon: <SparkInternetLine size={16} />,
-        },
-        {
-          key: "security",
-          label: collapsed ? null : t("nav.security"),
-          icon: <SparkBrowseLine size={16} />,
-        },
-        ...(canManageUsers
-          ? [
-              {
-                key: "user-management",
-                label: collapsed ? null : t("nav.userManagement"),
-                icon: <SparkUserGroupLine size={16} />,
-              },
-            ]
-          : []),
-        {
-          key: "token-usage",
-          label: collapsed ? null : t("nav.tokenUsage"),
-          icon: <SparkDataLine size={16} />,
-        },
-        {
-          key: "backups",
-          label: collapsed ? null : t("nav.backups"),
-          icon: <SparkSaveLine size={16} />,
-        },
-        {
-          key: "voice-transcription",
-          label: collapsed ? null : t("nav.voiceTranscription"),
-          icon: <SparkMicLine size={16} />,
-        },
-        {
-          key: "debug",
-          label: collapsed ? null : t("nav.debug", "Debug"),
-          icon: <SparkDebugLine size={16} />,
-        },
-        {
-          key: "plugin-manager",
-          label: collapsed ? null : t("nav.pluginManager", "Plugin Manager"),
-          icon: <Package size={16} />,
-        },
-      ],
+      children: settingsMenuChildren,
     },
   ];
 
