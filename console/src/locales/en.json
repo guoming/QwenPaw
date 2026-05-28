@@ -1248,7 +1248,9 @@
     "allSelected": "All",
     "itemsSelected": "{{count}} selected",
     "selectModels": "Select models",
-    "selectTokenTypes": "Select token types"
+    "selectTokenTypes": "Select token types",
+    "scopeMine": "My usage",
+    "scopeAll": "All users"
   },
   "agentStats": {
     "title": "Agent Statistics",
@@ -2199,6 +2201,12 @@
     "logoutSuccess": "Logged out successfully",
     "sessionExpired": "Session expired, please login again",
     "unauthorized": "Unauthorized, please login"
+  },
+  "sidebarUser": {
+    "loggedIn": "Signed in",
+    "admin": "Admin",
+    "userId": "User ID",
+    "username": "Username"
   },
   "account": {
     "title": "Account",

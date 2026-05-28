@@ -587,7 +587,7 @@ async def write_memory_file(
 async def get_agent_language(request: Request) -> dict:
     """Get agent language setting for current agent."""
     workspace = await get_agent_for_request(request)
-    agent_config = load_agent_config(workspace.agent_id)
+    agent_config = load_agent_config(workspace.agent_id, user_id=workspace.user_id)
     return {
         "language": agent_config.language,
         "agent_id": workspace.agent_id,
@@ -626,11 +626,18 @@ async def put_agent_language(
     workspace = await get_agent_for_request(request)
     agent_id = workspace.agent_id
 
-    agent_config = load_agent_config(agent_id)
+    agent_config = load_agent_config(
+        agent_id,
+        user_id=workspace.user_id,
+    )
     old_language = agent_config.language
 
     agent_config.language = language
-    save_agent_config(agent_id, agent_config)
+    save_agent_config(
+        agent_id,
+        agent_config,
+        user_id=workspace.user_id,
+    )
 
     copied_files: list[str] = []
     if old_language != language:
@@ -919,7 +926,7 @@ async def get_agents_running_config(
 ) -> AgentsRunningConfig:
     """Get agent running configuration."""
     workspace = await get_agent_for_request(request)
-    agent_config = load_agent_config(workspace.agent_id)
+    agent_config = load_agent_config(workspace.agent_id, user_id=workspace.user_id)
     running = agent_config.running or AgentsRunningConfig()
     running.approval_level = getattr(agent_config, "approval_level", "AUTO")
     return running
@@ -940,14 +947,14 @@ async def put_agents_running_config(
 ) -> AgentsRunningConfig:
     """Update agent running configuration."""
     workspace = await get_agent_for_request(request)
-    agent_config = load_agent_config(workspace.agent_id)
+    agent_config = load_agent_config(workspace.agent_id, user_id=workspace.user_id)
 
     if running_config.approval_level is not None:
         agent_config.approval_level = running_config.approval_level
 
     running_config.approval_level = None
     agent_config.running = running_config
-    save_agent_config(workspace.agent_id, agent_config)
+    save_agent_config(workspace.agent_id, agent_config, user_id=workspace.user_id)
 
     schedule_agent_reload(request, workspace.agent_id)
 
@@ -966,7 +973,7 @@ async def get_system_prompt_files(
 ) -> list[str]:
     """Get list of enabled system prompt files."""
     workspace = await get_agent_for_request(request)
-    agent_config = load_agent_config(workspace.agent_id)
+    agent_config = load_agent_config(workspace.agent_id, user_id=workspace.user_id)
     return agent_config.system_prompt_files or []
 
 
@@ -985,9 +992,9 @@ async def put_system_prompt_files(
 ) -> list[str]:
     """Update list of enabled system prompt files."""
     workspace = await get_agent_for_request(request)
-    agent_config = load_agent_config(workspace.agent_id)
+    agent_config = load_agent_config(workspace.agent_id, user_id=workspace.user_id)
     agent_config.system_prompt_files = files
-    save_agent_config(workspace.agent_id, agent_config)
+    save_agent_config(workspace.agent_id, agent_config, user_id=workspace.user_id)
 
     schedule_agent_reload(request, workspace.agent_id)
 

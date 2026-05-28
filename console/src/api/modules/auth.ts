@@ -11,6 +11,13 @@ export interface AuthStatusResponse {
   has_users: boolean;
 }
 
+export interface VerifyResponse {
+  valid: boolean;
+  username: string;
+  user_id: string;
+  is_admin: boolean;
+}
+
 export const authApi = {
   login: async (username: string, password: string): Promise<LoginResponse> => {
     const res = await fetch(getApiUrl("/auth/login"), {
@@ -44,6 +51,15 @@ export const authApi = {
   getStatus: async (): Promise<AuthStatusResponse> => {
     const res = await fetch(getApiUrl("/auth/status"));
     if (!res.ok) throw new Error("Failed to check auth status");
+    return res.json();
+  },
+
+  verify: async (): Promise<VerifyResponse> => {
+    const token = localStorage.getItem("qwenpaw_auth_token") || "";
+    const res = await fetch(getApiUrl("/auth/verify"), {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error("Token invalid");
     return res.json();
   },
 

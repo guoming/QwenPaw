@@ -1927,8 +1927,45 @@ def _migrate_access_control_fields(  # pylint: disable=too-many-branches
     return migrated
 
 
+def agent_config_cache_key(
+    agent_id: str,
+    user_id: str | None = None,
+) -> str:
+    """Cache key for agent config (global template vs per-user copy)."""
+    return f"{agent_id}:{user_id or ''}"
+
+
+def resolve_agent_config_path(
+    agent_id: str,
+    user_id: str | None = None,
+) -> Path:
+    """Return path to agent.json (global template or per-user copy)."""
+    from ..constant import USERS_DIR
+    from .utils import load_config
+
+    if user_id:
+        return (
+            USERS_DIR
+            / user_id
+            / "agent_configs"
+            / agent_id
+            / "agent.json"
+        )
+
+    config = load_config()
+    if agent_id not in config.agents.profiles:
+        raise ConfigurationException(
+            config_key="agent",
+            message=f"Agent '{agent_id}' not found in config",
+        )
+    agent_ref = config.agents.profiles[agent_id]
+    return Path(agent_ref.workspace_dir).expanduser() / "agent.json"
+
+
 def load_agent_config(  # pylint: disable=too-many-branches,too-many-statements
     agent_id: str,
+    *,
+    user_id: str | None = None,
 ) -> AgentProfileConfig:
     """Load agent's complete configuration from workspace/agent.json with
     mtime-based caching.
@@ -1960,12 +1997,31 @@ def load_agent_config(  # pylint: disable=too-many-branches,too-many-statements
 
     agent_ref = config.agents.profiles[agent_id]
     workspace_dir = Path(agent_ref.workspace_dir).expanduser()
-    agent_config_path = workspace_dir / "agent.json"
+    agent_config_path = resolve_agent_config_path(agent_id, user_id=user_id)
+
+    if user_id and not agent_config_path.exists():
+        import shutil
+
+        template_path = resolve_agent_config_path(agent_id, user_id=None)
+        agent_config_path.parent.mkdir(parents=True, exist_ok=True)
+        if template_path.exists():
+            shutil.copy2(template_path, agent_config_path)
+        else:
+            fallback_config = build_fallback_agent_profile_config(
+                agent_id,
+                config,
+            )
+            save_agent_config(
+                agent_id,
+                fallback_config,
+                user_id=user_id,
+            )
+            return fallback_config
 
     if not agent_config_path.exists():
         fallback_config = build_fallback_agent_profile_config(agent_id, config)
         # Save for future use
-        save_agent_config(agent_id, fallback_config)
+        save_agent_config(agent_id, fallback_config, user_id=user_id)
         return fallback_config
 
     # Check mtime to see if we can use cached config
@@ -1973,13 +2029,15 @@ def load_agent_config(  # pylint: disable=too-many-branches,too-many-statements
         current_mtime = agent_config_path.stat().st_mtime
     except OSError:
         fallback_config = build_fallback_agent_profile_config(agent_id, config)
-        save_agent_config(agent_id, fallback_config)
+        save_agent_config(agent_id, fallback_config, user_id=user_id)
         return fallback_config
+
+    cache_key = agent_config_cache_key(agent_id, user_id)
 
     with _agent_config_lock:
         # Return cached config if mtime hasn't changed
-        if agent_id in _agent_config_cache:
-            cached_config, cached_mtime = _agent_config_cache[agent_id]
+        if cache_key in _agent_config_cache:
+            cached_config, cached_mtime = _agent_config_cache[cache_key]
             if cached_mtime == current_mtime:
                 return cached_config
 
@@ -2056,7 +2114,7 @@ def load_agent_config(  # pylint: disable=too-many-branches,too-many-statements
         agent_config = AgentProfileConfig(**data)
 
         # Cache the config with its mtime
-        _agent_config_cache[agent_id] = (agent_config, current_mtime)
+        _agent_config_cache[cache_key] = (agent_config, current_mtime)
 
         return agent_config
 
@@ -2064,6 +2122,8 @@ def load_agent_config(  # pylint: disable=too-many-branches,too-many-statements
 def save_agent_config(
     agent_id: str,
     agent_config: AgentProfileConfig,
+    *,
+    user_id: str | None = None,
 ) -> None:
     """Save agent configuration to workspace/agent.json and invalidate cache.
 
@@ -2088,11 +2148,8 @@ def save_agent_config(
             message=f"Agent '{agent_id}' not found in config",
         )
 
-    agent_ref = config.agents.profiles[agent_id]
-    workspace_dir = Path(agent_ref.workspace_dir).expanduser()
-    workspace_dir.mkdir(parents=True, exist_ok=True)
-
-    agent_config_path = workspace_dir / "agent.json"
+    agent_config_path = resolve_agent_config_path(agent_id, user_id=user_id)
+    agent_config_path.parent.mkdir(parents=True, exist_ok=True)
 
     with open(agent_config_path, "w", encoding="utf-8") as f:
         json.dump(
@@ -2103,9 +2160,10 @@ def save_agent_config(
         )
 
     # Invalidate cache after saving
+    cache_key = agent_config_cache_key(agent_id, user_id)
     with _agent_config_lock:
-        if agent_id in _agent_config_cache:
-            del _agent_config_cache[agent_id]
+        if cache_key in _agent_config_cache:
+            del _agent_config_cache[cache_key]
 
 
 def migrate_legacy_config_to_multi_agent() -> bool:

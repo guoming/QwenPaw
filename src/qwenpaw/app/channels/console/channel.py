@@ -554,8 +554,13 @@ class ConsoleChannel(BaseChannel):
             f"{prefix}{text}\n",
         )
         sid = (meta or {}).get("session_id")
+        auth_uid = (meta or {}).get("auth_user_id")
         if sid and text.strip():
-            await push_store_append(sid, text.strip())
+            await push_store_append(
+                sid,
+                text.strip(),
+                auth_user_id=auth_uid or None,
+            )
 
     async def send_content_parts(
         self,
@@ -568,10 +573,15 @@ class ConsoleChannel(BaseChannel):
         """
         self._print_parts(parts)
         sid = (meta or {}).get("session_id")
+        auth_uid = (meta or {}).get("auth_user_id")
         if sid:
             body = self._parts_to_text(parts, meta)
             if body.strip():
-                await push_store_append(sid, body.strip())
+                await push_store_append(
+                    sid,
+                    body.strip(),
+                    auth_user_id=auth_uid or None,
+                )
 
     # ── lifecycle ───────────────────────────────────────────────────
 

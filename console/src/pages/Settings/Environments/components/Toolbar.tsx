@@ -16,6 +16,7 @@ interface ToolbarProps {
   onReset: () => void;
   onSave: () => void;
   className?: string;
+  readOnly?: boolean;
 }
 
 export function Toolbar({
@@ -31,6 +32,7 @@ export function Toolbar({
   onReset,
   onSave,
   className,
+  readOnly = false,
 }: ToolbarProps) {
   const { t } = useTranslation();
 
@@ -42,6 +44,7 @@ export function Toolbar({
             checked={allSelected}
             indeterminate={indeterminate}
             onChange={onToggleSelectAll}
+            disabled={readOnly}
           />
         )}
         <span className={styles.toolbarCount}>
@@ -64,14 +67,14 @@ export function Toolbar({
             size="small"
             icon={<SparkDeleteLine />}
             onClick={onRemoveSelected}
-            disabled={saving}
+            disabled={saving || readOnly}
           >
             {t("common.delete")} ({selectedSize})
           </Button>
         )}
         {dirty && (
           <>
-            <Button size="small" onClick={onReset} disabled={saving}>
+            <Button size="small" onClick={onReset} disabled={saving || readOnly}>
               {t("common.reset")}
             </Button>
             <Button
@@ -79,6 +82,7 @@ export function Toolbar({
               size="small"
               loading={saving}
               onClick={onSave}
+              disabled={readOnly}
             >
               {t("common.save")}
             </Button>

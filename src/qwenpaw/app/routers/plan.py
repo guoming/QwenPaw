@@ -129,7 +129,7 @@ async def put_plan_config(
     if workspace.config.plan is None:
         workspace.config.plan = PlanConfig()
     workspace.config.plan.enabled = body.enabled
-    save_agent_config(workspace.agent_id, workspace.config)
+    save_agent_config(workspace.agent_id, workspace.config, user_id=workspace.user_id)
     return PlanConfigResponse(enabled=workspace.config.plan.enabled)
 
 

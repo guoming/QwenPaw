@@ -8,6 +8,9 @@ import json
 import logging
 from pathlib import Path
 from fastapi import APIRouter, Body, HTTPException, Request
+
+from ..deps import require_admin
+from ..user_agent_registry import purge_agent_for_all_users, seed_user_for_all_users
 from fastapi import Path as PathParam
 from pydantic import BaseModel, field_validator
 
@@ -160,16 +163,22 @@ def _read_profile_description(workspace_dir: str) -> str:
     summary="List all agents",
     description="Get list of all configured agents",
 )
-async def list_agents() -> AgentListResponse:
+async def list_agents(request: Request) -> AgentListResponse:
     """List all configured agents."""
     config = load_config()
     ordered_agent_ids = _normalized_agent_order(config)
+    auth_user_id = getattr(request.state, "user_id", None)
+    is_admin = bool(getattr(request.state, "is_admin", False))
+    config_user_id = None if is_admin else auth_user_id
 
     agents = []
     for agent_id in ordered_agent_ids:
         agent_ref = config.agents.profiles[agent_id]
         try:
-            agent_config = load_agent_config(agent_id)
+            agent_config = load_agent_config(
+                agent_id,
+                user_id=config_user_id,
+            )
             description = agent_config.description or ""
 
             profile_desc = _read_profile_description(agent_ref.workspace_dir)
@@ -211,9 +220,11 @@ async def list_agents() -> AgentListResponse:
     description="Save the full ordered list of configured agent IDs",
 )
 async def reorder_agents(
+    request: Request,
     reorder_request: ReorderAgentsRequest = Body(...),
 ) -> dict:
     """Persist the full ordered list of agent IDs."""
+    require_admin(request)
     config = load_config()
     configured_ids = list(config.agents.profiles.keys())
 
@@ -241,10 +252,16 @@ async def reorder_agents(
     summary="Get agent details",
     description="Get complete configuration for a specific agent",
 )
-async def get_agent(agentId: str = PathParam(...)) -> AgentProfileConfig:
-    """Get agent configuration."""
+async def get_agent(
+    request: Request,
+    agentId: str = PathParam(...),
+) -> AgentProfileConfig:
+    """Get agent configuration for the authenticated user."""
+    from ..deps import get_request_user_id
+
     try:
-        agent_config = load_agent_config(agentId)
+        user_id = get_request_user_id(request)
+        agent_config = load_agent_config(agentId, user_id=user_id)
         return agent_config
     except (ValueError, AppBaseException) as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
@@ -277,6 +294,7 @@ def _generate_unique_id(existing_ids: set[str]) -> str:
     description="Create a new agent with optional custom ID",
 )
 async def create_agent(
+    http_request: Request,
     request: CreateAgentRequest = Body(...),
 ) -> AgentProfileRef:
     """Create a new agent.
@@ -285,6 +303,7 @@ async def create_agent(
     (validated for URL-safe characters, length, reserved words, and
     uniqueness).  Otherwise a random short UUID is generated.
     """
+    require_admin(http_request)
     config = load_config()
     existing_ids = set(config.agents.profiles.keys())
 
@@ -346,7 +365,8 @@ async def create_agent(
     config.agents.profiles[new_id] = agent_ref
     config.agents.agent_order = _normalized_agent_order(config)
     save_config(config)
-    save_agent_config(new_id, agent_config)
+    save_agent_config(new_id, agent_config, user_id=None)
+    seed_user_for_all_users(new_id)
 
     logger.info(f"Created new agent: {new_id} (name={request.name})")
 
@@ -364,7 +384,8 @@ async def update_agent(
     agent_config: AgentProfileConfig = Body(...),
     request: Request = None,
 ) -> AgentProfileConfig:
-    """Update agent configuration."""
+    """Update agent configuration (global template)."""
+    require_admin(request)
     config = load_config()
 
     if agentId not in config.agents.profiles:
@@ -373,7 +394,7 @@ async def update_agent(
             detail=f"Agent '{agentId}' not found",
         )
 
-    existing_config = load_agent_config(agentId)
+    existing_config = load_agent_config(agentId, user_id=None)
 
     update_data = agent_config.model_dump(exclude_unset=True)
     for key, value in update_data.items():
@@ -381,7 +402,7 @@ async def update_agent(
             setattr(existing_config, key, value)
 
     existing_config.id = agentId
-    save_agent_config(agentId, existing_config)
+    save_agent_config(agentId, existing_config, user_id=None)
     schedule_agent_reload(request, agentId)
 
     return agent_config
@@ -397,6 +418,7 @@ async def delete_agent(
     request: Request = None,
 ) -> dict:
     """Delete an agent."""
+    require_admin(request)
     config = load_config()
 
     if agentId not in config.agents.profiles:
@@ -413,6 +435,7 @@ async def delete_agent(
 
     manager = _get_multi_agent_manager(request)
     await manager.stop_agent(agentId)
+    purge_agent_for_all_users(agentId)
 
     del config.agents.profiles[agentId]
     config.agents.agent_order = _normalized_agent_order(config)

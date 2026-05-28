@@ -111,9 +111,8 @@ You can customize paths and behavior via environment variables:
 
 | Variable                     | Default | Description                                        |
 | ---------------------------- | ------- | -------------------------------------------------- |
-| `QWENPAW_AUTH_ENABLED`       | `false` | Whether to enable Web console login authentication |
-| `QWENPAW_AUTH_USERNAME`      | -       | Admin username for auto-registration (optional)    |
-| `QWENPAW_AUTH_PASSWORD`      | -       | Admin password for auto-registration (optional)    |
+| `QWENPAW_AUTH_USERNAME` | -       | Admin username for startup auto-registration (optional) |
+| `QWENPAW_AUTH_PASSWORD` | -       | Admin password for startup auto-registration (optional) |
 | `QWENPAW_TOOL_GUARD_ENABLED` | `true`  | Whether to enable tool guard                       |
 | `QWENPAW_SKILL_SCAN_MODE`    | `warn`  | Skill scanning mode (`block` / `warn` / `off`)     |
 

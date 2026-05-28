@@ -603,13 +603,13 @@ curl -X POST http://localhost:8088/api/console/chat \
   -d '{"input":[{"role":"user","content":[{"type":"text","text":"Hello"}]}],"channel":"console"}'
 ```
 
-### Web Authentication Token (Optional)
+### Web Authentication Token
 
-If [Web Login Authentication](./security#web-authentication) is enabled (`QWENPAW_AUTH_ENABLED=true`), all API requests require an authentication token.
+After users exist, most `/api/*` requests require a [Bearer token](./security#web-authentication), except public paths and clients listed in `allow_no_auth_hosts`.
 
 #### Register Account
 
-**First-time setup requires registering an admin account** (QwenPaw uses single-user mode):
+**First-time setup: register an account** (the first user becomes admin):
 
 ```bash
 curl -X POST http://localhost:8088/api/auth/register \
@@ -644,7 +644,7 @@ curl -X POST http://localhost:8088/api/auth/register \
 
 **Important Notes**:
 
-- Registration endpoint can only be called once (single-user mode)
+- Additional users can register after the first admin exists (non-admin by default)
 - Registration returns a login token immediately
 - Returns `{"detail":"User already registered"}` error if a user already exists
 - Supports custom token expiration via `expires_in` parameter (same as login)
@@ -685,7 +685,6 @@ docker exec -it <container_name> qwenpaw auth reset-password
 You can also auto-create an account via environment variables when starting QwenPaw:
 
 ```bash
-export QWENPAW_AUTH_ENABLED=true
 export QWENPAW_AUTH_USERNAME=admin
 export QWENPAW_AUTH_PASSWORD=admin123
 qwenpaw app
@@ -860,43 +859,14 @@ curl -X POST http://localhost:8088/api/auth/update-profile \
 - Recommended to revoke immediately when tokens are compromised or devices are lost
 - If using permanent tokens (`expires_in: 0`), strongly recommend periodic manual revocation and reissuance
 
-#### Disabling Authentication
+#### Local token-less access
 
-If you don't want to use Web authentication, you can disable it:
-
-**Method 1: Remove Environment Variable**
-
-```bash
-# Linux / macOS
-unset QWENPAW_AUTH_ENABLED
-qwenpaw app
-
-# Windows (CMD)
-set QWENPAW_AUTH_ENABLED=
-qwenpaw app
-
-# Windows (PowerShell)
-Remove-Item Env:\QWENPAW_AUTH_ENABLED
-qwenpaw app
-```
-
-**Method 2: Docker Deployment**
-
-Remove the `-e QWENPAW_AUTH_ENABLED=true` parameter:
-
-```bash
-docker run -p 127.0.0.1:8088:8088 \
-  -v qwenpaw-data:/app/working \
-  -v qwenpaw-secrets:/app/working.secret \
-  -v qwenpaw-backups:/app/working.backups \
-  agentscope/qwenpaw:latest
-```
+For local CLI workflows, keep your client IP in `security.allow_no_auth_hosts` (defaults include `127.0.0.1`). **Do not whitelist public IPs.**
 
 **Important**:
 
-- After disabling authentication, all API requests **do not need** the `Authorization` header
-- If authentication is **not enabled**, no `Authorization` header is needed
-- Check authentication status: `GET /api/auth/status`
+- Check whether users exist: `GET /api/auth/status` (`has_users`)
+- When `has_users` is true, send `Authorization: Bearer <token>` unless your IP is on the whitelist
 
 ## Troubleshooting
 

@@ -78,11 +78,10 @@ $QWENPAW_SECRET_DIR/                       # 默认 ~/.qwenpaw.secret
 
 **安全与认证：**
 
-| 变量                         | 默认值  | 说明                                     |
-| ---------------------------- | ------- | ---------------------------------------- |
-| `QWENPAW_AUTH_ENABLED`       | `false` | 是否启用 Web 控制台登录认证              |
-| `QWENPAW_AUTH_USERNAME`      | -       | 自动注册时的管理员用户名（可选）         |
-| `QWENPAW_AUTH_PASSWORD`      | -       | 自动注册时的管理员密码（可选）           |
+| 变量                    | 默认值 | 说明                                               |
+| ----------------------- | ------ | -------------------------------------------------- |
+| `QWENPAW_AUTH_USERNAME` | -      | 启动时自动创建首个管理员账户的用户名（可选）       |
+| `QWENPAW_AUTH_PASSWORD` | -      | 启动时自动创建首个管理员账户的密码（可选）         |
 | `QWENPAW_TOOL_GUARD_ENABLED` | `true`  | 是否启用工具守卫                         |
 | `QWENPAW_SKILL_SCAN_MODE`    | `warn`  | 技能扫描模式（`block` / `warn` / `off`） |
 

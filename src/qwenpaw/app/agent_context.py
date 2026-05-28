@@ -8,7 +8,9 @@ from pathlib import Path
 from typing import Optional, TYPE_CHECKING
 from fastapi import Request
 from .multi_agent_manager import MultiAgentManager
+from ..config.config import load_agent_config, save_agent_config
 from ..config.utils import load_config
+from .deps import get_request_user_id
 
 if TYPE_CHECKING:
     from .workspace import Workspace
@@ -99,8 +101,13 @@ async def get_agent_for_request(
 
     manager: MultiAgentManager = request.app.state.multi_agent_manager
 
+    user_id = get_request_user_id(request)
+
     try:
-        workspace = await manager.get_agent(target_agent_id)
+        workspace = await manager.get_agent(
+            target_agent_id,
+            user_id=user_id,
+        )
         if not workspace:
             raise HTTPException(
                 status_code=404,
@@ -120,15 +127,12 @@ async def get_agent_for_request(
 
 
 def get_coding_dir(workspace: "Workspace") -> Path:
-    """Return the active coding project directory for *workspace*.
-
-    If the agent has set a ``coding_mode.project_dir`` in its config, that
-    path is returned.  Otherwise the agent's default ``workspace_dir`` is used.
-    """
-    from ..config.config import load_agent_config
-
+    """Return the active coding project directory for *workspace*."""
     try:
-        config = load_agent_config(workspace.agent_id)
+        config = load_agent_config(
+            workspace.agent_id,
+            user_id=workspace.user_id,
+        )
         project_dir = (
             config.coding_mode.project_dir if config.coding_mode else None
         )
@@ -137,7 +141,20 @@ def get_coding_dir(workspace: "Workspace") -> Path:
 
     if project_dir:
         return Path(project_dir).expanduser().resolve()
+
     return workspace.workspace_dir
+
+
+def save_workspace_agent_config(
+    workspace: "Workspace",
+    agent_config,
+) -> None:
+    """Persist agent config for the workspace owner."""
+    save_agent_config(
+        workspace.agent_id,
+        agent_config,
+        user_id=workspace.user_id,
+    )
 
 
 def get_active_agent_id() -> str:

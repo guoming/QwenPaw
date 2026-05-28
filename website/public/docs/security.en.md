@@ -589,26 +589,17 @@ Here's a complete `config.json` with all security features configured:
 
 ## Web Authentication
 
-QwenPaw supports optional web login authentication to protect the Console from unauthorized access. Authentication is **disabled by default** and must be explicitly enabled via the `QWENPAW_AUTH_ENABLED` environment variable.
+Once at least one user is registered, the Console **always requires login**. Before any user exists, the first visit shows a **registration** page; the **first registered user becomes admin** (can change global Settings). Additional users are non-admin and get isolated Agent configs and runtime data.
 
 ![login](https://img.alicdn.com/imgextra/i1/O1CN01wh3Sv01SxPEXpb6Wj_!!6000000002313-2-tps-3822-2070.png)
 
 ### How it works
 
-1. **Enable authentication** — Set `QWENPAW_AUTH_ENABLED=true` and start QwenPaw
-2. **Registration flow**:
-   - On first visit, the Console shows a **registration page**
-   - Create the single admin account (username + password)
-   - System uses single-user mode, designed for personal use
-3. **Login flow**:
-   - After registration, subsequent visits show the **login page**
-   - After entering credentials, a signed token is generated (valid for 7 days)
-   - Token is stored in browser localStorage and automatically attached to all API requests
-4. **Auto-registration** (optional):
-   - Set `QWENPAW_AUTH_USERNAME` and `QWENPAW_AUTH_PASSWORD` environment variables
-   - QwenPaw automatically creates the admin account on startup, skipping web registration
-   - Useful for Docker, Kubernetes, server management panels, and other automated deployments
-5. **Localhost bypass** — Requests from localhost (`127.0.0.1` / `::1`) automatically skip authentication; CLI commands (`qwenpaw app`, `qwenpaw chat`, etc.) work without a token
+1. **First registration** — No users yet: register via the Console; first account is admin
+2. **Multi-user** — Multiple accounts supported; Chat, Inbox, Channels, and per-agent configs are isolated per user
+3. **Login flow** — Credentials yield a signed token (default 7-day TTL), stored in localStorage and sent on API requests
+4. **Auto-registration** (optional) — Set `QWENPAW_AUTH_USERNAME` and `QWENPAW_AUTH_PASSWORD` to create the first admin on startup (Docker/K8s)
+5. **Auth-bypass whitelist** — `security.allow_no_auth_hosts` defaults to `127.0.0.1` / `::1` so local `/api/*` calls can omit tokens; do not add public IPs in production
 
 **Security features**:
 
@@ -621,9 +612,8 @@ QwenPaw supports optional web login authentication to protect the Console from u
 
 | Variable                | Description                                  | Required |
 | ----------------------- | -------------------------------------------- | -------- |
-| `QWENPAW_AUTH_ENABLED`  | Set to `true` to enable authentication       | **Yes**  |
-| `QWENPAW_AUTH_USERNAME` | Pre-set admin username for auto-registration | Optional |
-| `QWENPAW_AUTH_PASSWORD` | Pre-set admin password for auto-registration | Optional |
+| `QWENPAW_AUTH_USERNAME` | Admin username for startup auto-registration | Optional |
+| `QWENPAW_AUTH_PASSWORD` | Admin password for startup auto-registration | Optional |
 
 ### Auth-bypass host whitelist
 
@@ -647,60 +637,39 @@ This can also be managed from the Console under **Settings → Security**.
 
 **Configuration notes**:
 
-- `QWENPAW_AUTH_ENABLED=true` is the only required variable to enable authentication
 - `QWENPAW_AUTH_USERNAME` and `QWENPAW_AUTH_PASSWORD` are used together:
-  - Both set → Auto-creates admin account on startup (for automated deployments)
-  - Not set or only one set → Register via web UI on first visit (interactive deployments)
-- If a user is already registered, auto-registration environment variables are ignored
+  - Both set → Auto-creates the first admin on startup
+  - Not set or only one set → Register via the Console on first visit
+- If users already exist, auto-registration env vars are ignored
 
-### Enable authentication
+### Set up the admin account
 
 #### Script install / pip install
-
-Set environment variables before starting:
 
 **Linux / macOS:**
 
 ```bash
-# Basic enable (web registration)
-export QWENPAW_AUTH_ENABLED=true
+# Web registration on first Console visit
 qwenpaw app
 
-# Or: Auto-registration mode
-export QWENPAW_AUTH_ENABLED=true
+# Or: auto-create admin on startup
 export QWENPAW_AUTH_USERNAME=admin
 export QWENPAW_AUTH_PASSWORD=mypassword
-qwenpaw app
-```
-
-To make it permanent, add the `export` lines to your `~/.bashrc`, `~/.zshrc`, or equivalent.
-
-**Windows (CMD):**
-
-```cmd
-set QWENPAW_AUTH_ENABLED=true
-rem Optional: auto-registration
-rem set QWENPAW_AUTH_USERNAME=admin
-rem set QWENPAW_AUTH_PASSWORD=mypassword
 qwenpaw app
 ```
 
 **Windows (PowerShell):**
 
 ```powershell
-$env:QWENPAW_AUTH_ENABLED = "true"
-# Optional: auto-registration
-# $env:QWENPAW_AUTH_USERNAME = "admin"
-# $env:QWENPAW_AUTH_PASSWORD = "mypassword"
+$env:QWENPAW_AUTH_USERNAME = "admin"
+$env:QWENPAW_AUTH_PASSWORD = "mypassword"
 qwenpaw app
 ```
 
 #### Docker
 
-Pass environment variables with `-e` (recommended with auto-registration):
-
 ```bash
-docker run -e QWENPAW_AUTH_ENABLED=true \
+docker run \
   -e QWENPAW_AUTH_USERNAME=admin \
   -e QWENPAW_AUTH_PASSWORD=mypassword \
   -p 127.0.0.1:8088:8088 \
@@ -709,8 +678,6 @@ docker run -e QWENPAW_AUTH_ENABLED=true \
   -v qwenpaw-backups:/app/working.backups \
   agentscope/qwenpaw:latest
 ```
-
-> **Tip**: To skip auto-registration, remove `QWENPAW_AUTH_USERNAME` and `QWENPAW_AUTH_PASSWORD` and register via browser on first visit.
 
 #### docker-compose.yml
 
@@ -721,7 +688,6 @@ services:
     ports:
       - "127.0.0.1:8088:8088"
     environment:
-      - QWENPAW_AUTH_ENABLED=true
       - QWENPAW_AUTH_USERNAME=admin
       - QWENPAW_AUTH_PASSWORD=mypassword
     volumes:
@@ -732,28 +698,12 @@ services:
 
 #### Environment file (.env)
 
-You can also use a `.env` file:
-
 ```
-QWENPAW_AUTH_ENABLED=true
 QWENPAW_AUTH_USERNAME=admin
 QWENPAW_AUTH_PASSWORD=mypassword
 ```
 
-Then pass it to Docker with `--env-file .env`, or source it in your shell before running `qwenpaw app`.
-
-### Disable authentication
-
-Remove or unset the environment variable and restart QwenPaw:
-
-```bash
-# Linux / macOS
-unset QWENPAW_AUTH_ENABLED
-qwenpaw app
-
-# Docker — simply remove the -e flag. The example below includes volumes for persistence.
-docker run -p 127.0.0.1:8088:8088 -v qwenpaw-data:/app/working -v qwenpaw-secrets:/app/working.secret -v qwenpaw-backups:/app/working.backups agentscope/qwenpaw:latest
-```
+Pass with `--env-file .env` or source before `qwenpaw app`.
 
 ### Password reset
 

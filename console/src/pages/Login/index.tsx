@@ -5,7 +5,8 @@ import { Button, Form, Input } from "antd";
 import { useAppMessage } from "../../hooks/useAppMessage";
 import { LockOutlined, UserOutlined } from "@ant-design/icons";
 import { authApi } from "../../api/modules/auth";
-import { setAuthToken } from "../../api/config";
+import { setAuthSession, setAuthToken } from "../../api/config";
+import { stripRouterBasename } from "../../utils/routerBasename";
 import { useTheme } from "../../contexts/ThemeContext";
 
 export default function LoginPage() {
@@ -22,10 +23,6 @@ export default function LoginPage() {
     authApi
       .getStatus()
       .then((res) => {
-        if (!res.enabled) {
-          navigate("/chat", { replace: true });
-          return;
-        }
         setHasUsers(res.has_users);
         if (!res.has_users) {
           setIsRegister(true);
@@ -38,23 +35,32 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const raw = searchParams.get("redirect") || "/chat";
-      const redirect =
+      const candidate =
         raw.startsWith("/") && !raw.startsWith("//") ? raw : "/chat";
+      const redirect = stripRouterBasename(candidate) || "/chat";
+
+      const persistSession = async (token: string) => {
+        setAuthToken(token);
+        const verified = await authApi.verify();
+        setAuthSession(
+          token,
+          verified.username,
+          verified.user_id,
+          verified.is_admin,
+        );
+      };
 
       if (isRegister) {
         const res = await authApi.register(values.username, values.password);
         if (res.token) {
-          setAuthToken(res.token);
+          await persistSession(res.token);
           message.success(t("login.registerSuccess"));
           navigate(redirect, { replace: true });
         }
       } else {
         const res = await authApi.login(values.username, values.password);
         if (res.token) {
-          setAuthToken(res.token);
-          navigate(redirect, { replace: true });
-        } else {
-          message.info(t("login.authNotEnabled"));
+          await persistSession(res.token);
           navigate(redirect, { replace: true });
         }
       }

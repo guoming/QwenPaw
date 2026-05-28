@@ -172,6 +172,7 @@ async def run_heartbeat_once(
     channel_manager: Any,
     agent_id: Optional[str] = None,
     workspace_dir: Optional[Path] = None,
+    auth_user_id: Optional[str] = None,
 ) -> None:
     """
     Run one heartbeat: read HEARTBEAT.md from workspace, run agent,
@@ -222,7 +223,10 @@ async def run_heartbeat_once(
     last_dispatch = None
     if agent_id:
         try:
-            agent_config = load_agent_config(agent_id)
+            agent_config = load_agent_config(
+                agent_id,
+                user_id=auth_user_id,
+            )
             last_dispatch = agent_config.last_dispatch
         except Exception:
             pass
@@ -297,6 +301,7 @@ async def run_heartbeat_once(
                 agent_id=agent_id,
                 source_type="heartbeat",
                 source_id=_HEARTBEAT_SOURCE_ID,
+                user_id=auth_user_id,
                 event_type="heartbeat_result",
                 status="success",
                 severity="info",
@@ -327,6 +332,7 @@ async def run_heartbeat_once(
                 agent_id=agent_id,
                 source_type="heartbeat",
                 source_id=_HEARTBEAT_SOURCE_ID,
+                user_id=auth_user_id,
                 event_type="heartbeat_timeout",
                 status="error",
                 severity="error",
@@ -353,6 +359,7 @@ async def run_heartbeat_once(
                 agent_id=agent_id,
                 source_type="heartbeat",
                 source_id=_HEARTBEAT_SOURCE_ID,
+                user_id=auth_user_id,
                 event_type="heartbeat_error",
                 status="error",
                 severity="error",

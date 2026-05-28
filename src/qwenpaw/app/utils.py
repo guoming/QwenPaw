@@ -123,9 +123,16 @@ def schedule_agent_reload(request: "Request", agent_id: str) -> None:
         )
         return
 
+    auth_user_id = getattr(request.state, "user_id", None)
+    is_admin = bool(getattr(request.state, "is_admin", False))
+    reload_user_id = None if is_admin else auth_user_id
+
     async def reload_in_background():
         try:
-            await manager.reload_agent(agent_id)
+            await manager.reload_agent(
+                agent_id,
+                user_id=reload_user_id,
+            )
         except Exception as e:
             logger.warning(
                 f"Background reload failed for agent '{agent_id}': {e}",

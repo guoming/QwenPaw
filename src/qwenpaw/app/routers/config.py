@@ -145,7 +145,7 @@ async def put_channels(
 
     agent = await get_agent_for_request(request)
     agent.config.channels = channels_config
-    save_agent_config(agent.agent_id, agent.config)
+    save_agent_config(agent.agent_id, agent.config, user_id=agent.user_id)
 
     # Hot reload config (async, non-blocking)
     schedule_agent_reload(request, agent.agent_id)
@@ -383,7 +383,7 @@ async def put_channel(
 
     # Set channel config in agent's config
     setattr(agent.config.channels, channel_name, channel_config)
-    save_agent_config(agent.agent_id, agent.config)
+    save_agent_config(agent.agent_id, agent.config, user_id=agent.user_id)
 
     # Hot reload config (async, non-blocking)
     schedule_agent_reload(request, agent.agent_id)
@@ -424,7 +424,7 @@ async def put_acp_config(
 
     agent = await get_agent_for_request(request)
     agent.config.acp = acp_config
-    save_agent_config(agent.agent_id, agent.config)
+    save_agent_config(agent.agent_id, agent.config, user_id=agent.user_id)
     schedule_agent_reload(request, agent.agent_id)
     return agent.config.acp
 
@@ -500,7 +500,7 @@ async def put_acp_agent_config(
         )
 
     agent.config.acp.agents[agent_name] = acp_agent_config
-    save_agent_config(agent.agent_id, agent.config)
+    save_agent_config(agent.agent_id, agent.config, user_id=agent.user_id)
     schedule_agent_reload(request, agent.agent_id)
     return agent.config.acp.agents[agent_name]
 
@@ -544,7 +544,7 @@ async def put_heartbeat(
         active_hours=body.active_hours,
     )
     agent.config.heartbeat = hb
-    save_agent_config(agent.agent_id, agent.config)
+    save_agent_config(agent.agent_id, agent.config, user_id=agent.user_id)
 
     # Reschedule heartbeat (async, non-blocking)
     import asyncio

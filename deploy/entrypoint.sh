@@ -3,32 +3,24 @@
 # Default port 8088; override at runtime with -e QWENPAW_PORT=3000.
 set -e
 
-is_auth_enabled() {
-  if [ "${QWENPAW_AUTH_ENABLED+x}" ]; then
-    flag="${QWENPAW_AUTH_ENABLED}"
-  else
-    flag="${COPAW_AUTH_ENABLED:-}"
-  fi
-  flag="$(printf '%s' "$flag" | tr '[:upper:]' '[:lower:]')"
-  [ "$flag" = "true" ] || [ "$flag" = "1" ] || [ "$flag" = "yes" ]
-}
-
-warn_if_auth_off_container_bind() {
-  if is_auth_enabled; then
+warn_docker_auth_setup() {
+  secret_dir="${QWENPAW_SECRET_DIR:-/app/working.secret}"
+  auth_file="${secret_dir}/auth.json"
+  if [ -f "$auth_file" ] || [ -n "${QWENPAW_AUTH_USERNAME:-}" ]; then
     return
   fi
 
   cat >&2 <<EOF
 ============================================================
-SECURITY NOTICE: QwenPaw is running in Docker without authentication.
+SECURITY NOTICE: No QwenPaw user is registered yet.
 
-QwenPaw cannot verify whether access to the service is limited to a trusted
-network. Anyone who can reach the service may access QwenPaw APIs without login.
+Web login is required once the first account is created (first user
+becomes admin). For automated Docker/Kubernetes deploys, set:
 
-Recommended:
-  - Restrict access to a trusted network or protected environment.
-  - Enable authentication with QWENPAW_AUTH_ENABLED=true if untrusted users or
-    processes may reach the service.
+  QWENPAW_AUTH_USERNAME=admin
+  QWENPAW_AUTH_PASSWORD=<strong-password>
+
+Otherwise open the console in a browser to complete registration.
 ============================================================
 EOF
 }
@@ -44,7 +36,7 @@ else
 fi
 
 export QWENPAW_PORT="${QWENPAW_PORT:-8088}"
-warn_if_auth_off_container_bind
+warn_docker_auth_setup
 envsubst '${QWENPAW_PORT}' \
   < /etc/supervisor/conf.d/supervisord.conf.template \
   > /etc/supervisor/conf.d/supervisord.conf

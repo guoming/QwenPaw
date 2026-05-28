@@ -455,6 +455,8 @@ class ToolGuardMixin:
 
         # Create pending approval with Future
         extra: dict[str, Any] = {"tool_call": tool_call}
+        from qwenpaw.config.context import get_current_user_id
+
         pending = await svc.create_pending(
             session_id=session_id,
             root_session_id=root_session_id,
@@ -466,6 +468,7 @@ class ToolGuardMixin:
             result=guard_result,
             timeout_seconds=TOOL_GUARD_APPROVAL_TIMEOUT_SECONDS,
             extra=extra,
+            auth_user_id=get_current_user_id() or "",
         )
 
         # Send approval request message to user (with frontend metadata)

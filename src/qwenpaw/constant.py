@@ -110,7 +110,15 @@ SECRET_DIR = (
     .resolve()
 )
 
-PROJECT_NAME = "QwenPaw"
+# Per-user isolated data (agent configs, runtime, coding workspaces, inbox)
+USERS_DIR = (WORKING_DIR / "users").resolve()
+
+
+def user_token_usage_path(user_id: str) -> Path:
+    """Path to per-user token usage file."""
+    return (USERS_DIR / user_id / TOKEN_USAGE_FILE).resolve()
+
+PROJECT_NAME = "arkbuddy"
 
 # Subdirectory name inside each agent's workspace that holds cloned / imported
 # coding projects.

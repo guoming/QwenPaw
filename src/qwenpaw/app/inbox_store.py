@@ -7,30 +7,41 @@ import time
 import uuid
 from typing import Any
 
-from ..constant import WORKING_DIR
+from ..constant import USERS_DIR, WORKING_DIR
 
 _INBOX_PATH = WORKING_DIR / "inbox_events.json"
 _LOCK = asyncio.Lock()
 _MAX_EVENTS = 5000
 
 
-def _load_events() -> list[dict[str, Any]]:
-    if not _INBOX_PATH.exists():
+def _get_user_inbox_path(user_id: str | None = None):
+    if user_id:
+        return USERS_DIR / user_id / "inbox_events.json"
+    return _INBOX_PATH
+
+
+def _load_events(user_id: str | None = None) -> list[dict[str, Any]]:
+    path = _get_user_inbox_path(user_id)
+    if not path.exists():
         return []
-    data = json.loads(_INBOX_PATH.read_text(encoding="utf-8"))
+    data = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(data, list):
         return []
     return [item for item in data if isinstance(item, dict)]
 
 
-def _save_events(events: list[dict[str, Any]]) -> None:
-    _INBOX_PATH.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = _INBOX_PATH.with_suffix(".json.tmp")
+def _save_events(
+    events: list[dict[str, Any]],
+    user_id: str | None = None,
+) -> None:
+    path = _get_user_inbox_path(user_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_suffix(".json.tmp")
     tmp_path.write_text(
         json.dumps(events, ensure_ascii=False, indent=2, sort_keys=True),
         encoding="utf-8",
     )
-    tmp_path.replace(_INBOX_PATH)
+    tmp_path.replace(path)
 
 
 async def append_event(
@@ -44,6 +55,7 @@ async def append_event(
     body: str,
     severity: str = "info",
     payload: dict[str, Any] | None = None,
+    user_id: str | None = None,
 ) -> dict[str, Any]:
     event = {
         "id": str(uuid.uuid4()),
@@ -60,10 +72,10 @@ async def append_event(
         "created_at": time.time(),
     }
     async with _LOCK:
-        events = _load_events()
+        events = _load_events(user_id)
         events.insert(0, event)
         del events[_MAX_EVENTS:]
-        _save_events(events)
+        _save_events(events, user_id)
     return event
 
 
@@ -75,9 +87,10 @@ async def list_events(
     status: str | None = None,
     agent_id: str | None = None,
     unread_only: bool = False,
+    user_id: str | None = None,
 ) -> list[dict[str, Any]]:
     async with _LOCK:
-        events = _load_events()
+        events = _load_events(user_id)
     if source_type:
         events = [
             event
@@ -95,41 +108,47 @@ async def list_events(
     return events[offset : offset + max(limit, 0)]
 
 
-async def mark_read(event_ids: list[str]) -> int:
+async def mark_read(
+    event_ids: list[str],
+    user_id: str | None = None,
+) -> int:
     if not event_ids:
         return 0
     event_id_set = set(event_ids)
     updated = 0
     async with _LOCK:
-        events = _load_events()
+        events = _load_events(user_id)
         for event in events:
             if event.get("id") in event_id_set and not bool(event.get("read")):
                 event["read"] = True
                 updated += 1
-        _save_events(events)
+        _save_events(events, user_id)
     return updated
 
 
-async def mark_all_read() -> int:
+async def mark_all_read(user_id: str | None = None) -> int:
     updated = 0
     async with _LOCK:
-        events = _load_events()
+        events = _load_events(user_id)
         for event in events:
             if not bool(event.get("read")):
                 event["read"] = True
                 updated += 1
-        _save_events(events)
+        _save_events(events, user_id)
     return updated
 
 
-async def delete_event(event_id: str) -> tuple[bool, str | None, bool]:
+async def delete_event(
+    event_id: str,
+    user_id: str | None = None,
+) -> tuple[bool, str | None, bool]:
     if not event_id:
         return False, None, False
     deleted = False
     deleted_run_id: str | None = None
     run_id_still_referenced = False
     async with _LOCK:
-        events = _load_events()
+        events = _load_events(user_id)
         kept_events = []
         for event in events:
             if not deleted and event.get("id") == event_id:
@@ -152,5 +171,5 @@ async def delete_event(event_id: str) -> tuple[bool, str | None, bool]:
                     run_id_still_referenced = True
                     break
         if deleted:
-            _save_events(kept_events)
+            _save_events(kept_events, user_id)
     return deleted, deleted_run_id, run_id_still_referenced

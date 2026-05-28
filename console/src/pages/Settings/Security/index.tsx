@@ -10,10 +10,12 @@ import {
   AllowNoAuthHostsTab,
 } from "./components";
 import { PageHeader } from "@/components/PageHeader";
+import { useSettingsWriteProps } from "../../../components/SettingsPageShell";
 import styles from "./index.module.less";
 
 function SecurityPage() {
   const { t } = useTranslation();
+  const writeProps = useSettingsWriteProps();
 
   const {
     activeTab,
@@ -176,7 +178,12 @@ function SecurityPage() {
           >
             {t("common.reset")}
           </Button>
-          <Button type="primary" onClick={handleSave} loading={saving}>
+          <Button
+            type="primary"
+            onClick={handleSave}
+            loading={saving}
+            {...writeProps}
+          >
             {t("common.save")}
           </Button>
         </div>
@@ -195,6 +202,7 @@ function SecurityPage() {
             type="primary"
             onClick={fileGuardHandlers.save}
             loading={fileGuardHandlers.saving}
+            {...writeProps}
           >
             {t("common.save")}
           </Button>
@@ -214,6 +222,7 @@ function SecurityPage() {
             type="primary"
             onClick={allowNoAuthHostsHandlers.save}
             loading={allowNoAuthHostsHandlers.saving}
+            {...writeProps}
           >
             {t("common.save")}
           </Button>

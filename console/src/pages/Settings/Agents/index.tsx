@@ -11,9 +11,11 @@ import { useAgents } from "./useAgents";
 import { AgentTable, AgentModal } from "./components";
 import { PageHeader } from "@/components/PageHeader";
 import { reorderAgents } from "./reorder";
+import { useSettingsWritable } from "../../../components/SettingsPageShell";
 import styles from "./index.module.less";
 
 export default function AgentsPage() {
+  const writable = useSettingsWritable();
   const { t, i18n } = useTranslation();
   const { agents, loading, deleteAgent, toggleAgent, loadAgents, setAgents } =
     useAgents();
@@ -182,6 +184,7 @@ export default function AgentsPage() {
               type="primary"
               icon={<PlusOutlined />}
               onClick={handleCreate}
+              disabled={!writable}
             >
               {t("agent.create")}
             </Button>

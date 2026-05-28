@@ -5,7 +5,13 @@ import {
   bailianTheme,
 } from "@agentscope-ai/design";
 import { App as AntdApp } from "antd";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import {
+  BrowserRouter,
+  Routes,
+  Route,
+  Navigate,
+  useLocation,
+} from "react-router-dom";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import zhCN from "antd/locale/zh_CN";
@@ -32,7 +38,8 @@ import { lazyImportWithRetry } from "./utils/lazyWithRetry";
 const LoginPage = lazyImportWithRetry("./pages/Login/index");
 import { authApi } from "./api/modules/auth";
 import { languageApi } from "./api/modules/language";
-import { getApiUrl, getApiToken, clearAuthToken } from "./api/config";
+import { getApiToken, clearAuthToken } from "./api/config";
+import { getRouterBasename } from "./utils/routerBasename";
 import "./styles/layout.css";
 import "./styles/form-override.css";
 
@@ -60,6 +67,7 @@ const GlobalStyle = createGlobalStyle`
 `;
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
+  const location = useLocation();
   const [status, setStatus] = useState<"loading" | "auth-required" | "ok">(
     "loading",
   );
@@ -70,8 +78,8 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
       try {
         const res = await authApi.getStatus();
         if (cancelled) return;
-        if (!res.enabled) {
-          setStatus("ok");
+        if (!res.has_users) {
+          setStatus("auth-required");
           return;
         }
         const token = getApiToken();
@@ -80,16 +88,8 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
           return;
         }
         try {
-          const r = await fetch(getApiUrl("/auth/verify"), {
-            headers: { Authorization: `Bearer ${token}` },
-          });
-          if (cancelled) return;
-          if (r.ok) {
-            setStatus("ok");
-          } else {
-            clearAuthToken();
-            setStatus("auth-required");
-          }
+          await authApi.verify();
+          if (!cancelled) setStatus("ok");
         } catch {
           if (!cancelled) {
             clearAuthToken();
@@ -97,7 +97,7 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
           }
         }
       } catch {
-        if (!cancelled) setStatus("ok");
+        if (!cancelled) setStatus("auth-required");
       }
     })();
     return () => {
@@ -106,18 +106,16 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   }, []);
 
   if (status === "loading") return null;
-  if (status === "auth-required")
+  if (status === "auth-required") {
+    const redirectTarget = `${location.pathname}${location.search}`;
     return (
       <Navigate
-        to={`/login?redirect=${encodeURIComponent(window.location.pathname)}`}
+        to={`/login?redirect=${encodeURIComponent(redirectTarget)}`}
         replace
       />
     );
+  }
   return <>{children}</>;
-}
-
-function getRouterBasename(pathname: string): string | undefined {
-  return /^\/console(?:\/|$)/.test(pathname) ? "/console" : undefined;
 }
 
 function AppInner() {

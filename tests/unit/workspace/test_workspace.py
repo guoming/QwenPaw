@@ -79,6 +79,32 @@ async def test_workspace_short_uuid_agent():
         assert workspace.workspace_dir.name == short_id
 
 
+def test_workspace_uses_per_user_workspace_dir(monkeypatch, tmp_path):
+    """Authenticated users read/write under users/<uid>/agent_workspaces/."""
+    from qwenpaw.app.workspace import Workspace
+    from qwenpaw import constant
+
+    users = tmp_path / "users"
+    working = tmp_path / "work"
+    monkeypatch.setattr(constant, "USERS_DIR", users)
+    monkeypatch.setattr(constant, "WORKING_DIR", working)
+
+    template = working / "workspaces" / "yaboyE"
+    template.mkdir(parents=True)
+    (template / "SOUL.md").write_text("# soul", encoding="utf-8")
+
+    ws = Workspace(
+        agent_id="yaboyE",
+        workspace_dir=str(template),
+        user_id="user_a",
+    )
+
+    expected = users / "user_a" / "agent_workspaces" / "yaboyE"
+    assert ws.workspace_dir == expected
+    assert (expected / "SOUL.md").read_text() == "# soul"
+    assert ws.data_dir == users / "user_a" / "agent_data" / "yaboyE"
+
+
 def test_workspace_repr():
     """Test workspace string representation."""
     from qwenpaw.app.workspace import Workspace

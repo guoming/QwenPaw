@@ -10,6 +10,7 @@ import { lazyImportWithRetry } from "../../utils/lazyWithRetry";
 import { usePlugins } from "../../plugins/PluginContext";
 import { useCodingMode } from "../../stores/codingModeStore";
 import { useSyncCodingMode } from "../../stores/useSyncCodingMode";
+import SettingsPageShell from "../../components/SettingsPageShell";
 import styles from "../index.module.less";
 
 // Chat is eagerly loaded (default landing page)
@@ -144,29 +145,100 @@ export default function MainLayout() {
                   <Route path="/cron-jobs" element={<CronJobsPage />} />
                   <Route path="/heartbeat" element={<HeartbeatPage />} />
                   <Route path="/skills" element={<SkillsPage />} />
-                  <Route path="/skill-pool" element={<SkillPoolPage />} />
-                  <Route path="/market" element={<MarketPage />} />
+                  <Route
+                    path="/skill-pool"
+                    element={
+                      <SettingsPageShell>
+                        <SkillPoolPage />
+                      </SettingsPageShell>
+                    }
+                  />
+                  <Route
+                    path="/market"
+                    element={
+                      <SettingsPageShell>
+                        <MarketPage />
+                      </SettingsPageShell>
+                    }
+                  />
                   <Route path="/tools" element={<ToolsPage />} />
                   <Route path="/mcp" element={<MCPPage />} />
                   <Route path="/acp" element={<ACPPage />} />
                   <Route path="/ACP" element={<Navigate to="/acp" replace />} />
                   <Route path="/workspace" element={<WorkspacePage />} />
-                  <Route path="/agents" element={<AgentsPage />} />
-                  <Route path="/models" element={<ModelsPage />} />
-                  <Route path="/environments" element={<EnvironmentsPage />} />
+                  <Route
+                    path="/agents"
+                    element={
+                      <SettingsPageShell>
+                        <AgentsPage />
+                      </SettingsPageShell>
+                    }
+                  />
+                  <Route
+                    path="/models"
+                    element={
+                      <SettingsPageShell>
+                        <ModelsPage />
+                      </SettingsPageShell>
+                    }
+                  />
+                  <Route
+                    path="/environments"
+                    element={
+                      <SettingsPageShell>
+                        <EnvironmentsPage />
+                      </SettingsPageShell>
+                    }
+                  />
                   <Route path="/agent-config" element={<AgentConfigPage />} />
-                  <Route path="/security" element={<SecurityPage />} />
-                  <Route path="/token-usage" element={<TokenUsagePage />} />
+                  <Route
+                    path="/security"
+                    element={
+                      <SettingsPageShell>
+                        <SecurityPage />
+                      </SettingsPageShell>
+                    }
+                  />
+                  <Route
+                    path="/token-usage"
+                    element={
+                      <SettingsPageShell>
+                        <TokenUsagePage />
+                      </SettingsPageShell>
+                    }
+                  />
                   <Route path="/agent-stats" element={<AgentStatsPage />} />
                   <Route
                     path="/voice-transcription"
-                    element={<VoiceTranscriptionPage />}
+                    element={
+                      <SettingsPageShell>
+                        <VoiceTranscriptionPage />
+                      </SettingsPageShell>
+                    }
                   />
-                  <Route path="/debug" element={<DebugPage />} />
-                  <Route path="/backups" element={<BackupsPage />} />
+                  <Route
+                    path="/debug"
+                    element={
+                      <SettingsPageShell>
+                        <DebugPage />
+                      </SettingsPageShell>
+                    }
+                  />
+                  <Route
+                    path="/backups"
+                    element={
+                      <SettingsPageShell>
+                        <BackupsPage />
+                      </SettingsPageShell>
+                    }
+                  />
                   <Route
                     path="/plugin-manager"
-                    element={<PluginManagerPage />}
+                    element={
+                      <SettingsPageShell>
+                        <PluginManagerPage />
+                      </SettingsPageShell>
+                    }
                   />
 
                   {/* Plugin routes — dynamically injected at runtime */}

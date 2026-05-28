@@ -20,6 +20,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { useTranslation } from "react-i18next";
 import type { ProviderInfo } from "../../../api/types/provider";
 import { getIsConfigured } from "./utils";
+import { useSettingsWriteProps } from "../../../components/SettingsPageShell";
 import styles from "./index.module.less";
 
 /* ------------------------------------------------------------------ */
@@ -28,6 +29,7 @@ import styles from "./index.module.less";
 
 function ModelsPage() {
   const { t } = useTranslation();
+  const writeProps = useSettingsWriteProps();
   const { providers, activeModels, loading, error, fetchAll } = useProviders();
   const [addProviderOpen, setAddProviderOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -171,6 +173,7 @@ function ModelsPage() {
                     icon={<PlusOutlined />}
                     onClick={() => setAddProviderOpen(true)}
                     className={styles.addProviderBtn}
+                    {...writeProps}
                   >
                     {t("models.addProvider")}
                   </Button>

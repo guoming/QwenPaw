@@ -27,10 +27,12 @@ import { useSkillPool } from "./useSkillPool";
 import { useProgressiveRender } from "../../../hooks/useProgressiveRender";
 import { PageHeader } from "@/components/PageHeader";
 import type { PoolSkillSpec } from "../../../api/types";
+import { useSettingsWriteProps } from "../../../components/SettingsPageShell";
 import styles from "./index.module.less";
 
 function SkillPoolPage() {
   const { t } = useTranslation();
+  const writeProps = useSettingsWriteProps();
   const pool = useSkillPool();
   const builtinNoticeLines = getBuiltinNoticeLines(pool.builtinNotice, t);
   const {
@@ -73,6 +75,7 @@ function SkillPoolPage() {
                   danger
                   icon={<DeleteOutlined />}
                   onClick={pool.handleBatchDeletePool}
+                  {...writeProps}
                 >
                   {t("common.delete")} ({pool.selectedPoolSkills.size})
                 </Button>
@@ -97,6 +100,7 @@ function SkillPoolPage() {
                       className={styles.primaryTransferButton}
                       icon={<SendOutlined />}
                       onClick={() => pool.openBroadcast()}
+                      {...writeProps}
                     >
                       {t("skillPool.broadcast")}
                     </Button>
@@ -123,6 +127,7 @@ function SkillPoolPage() {
                         type="default"
                         icon={<SyncOutlined />}
                         onClick={() => void pool.openImportBuiltin()}
+                        {...writeProps}
                       >
                         {t("skillPool.importBuiltin")}
                       </Button>
@@ -135,6 +140,7 @@ function SkillPoolPage() {
                       type="default"
                       icon={<UploadOutlined />}
                       onClick={() => pool.zipInputRef.current?.click()}
+                      {...writeProps}
                     >
                       {t("skills.uploadZip")}
                     </Button>
@@ -144,6 +150,7 @@ function SkillPoolPage() {
                       type="default"
                       icon={<ImportOutlined />}
                       onClick={() => pool.setImportModalOpen(true)}
+                      {...writeProps}
                     >
                       {t("skills.importHub")}
                     </Button>
@@ -157,6 +164,7 @@ function SkillPoolPage() {
                       className={styles.primaryActionButton}
                       icon={<PlusOutlined />}
                       onClick={pool.openCreate}
+                      {...writeProps}
                     >
                       {t("skills.createSkill")}
                     </Button>

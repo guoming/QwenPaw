@@ -300,7 +300,11 @@ class ModelCommandHandler(BaseControlCommandHandler):
 
         # Save to agent.json
         try:
-            save_agent_config(agent_config.id, agent_config)
+            save_agent_config(
+                agent_config.id,
+                agent_config,
+                user_id=workspace.user_id,
+            )
         except Exception as e:
             logger.exception(f"Failed to save agent config: {e}")
             return (
@@ -351,7 +355,11 @@ class ModelCommandHandler(BaseControlCommandHandler):
 
         # Save to agent.json
         try:
-            save_agent_config(agent_config.id, agent_config)
+            save_agent_config(
+                agent_config.id,
+                agent_config,
+                user_id=workspace.user_id,
+            )
         except Exception as e:
             logger.exception(f"Failed to save agent config: {e}")
             return (

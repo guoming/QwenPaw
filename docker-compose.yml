@@ -16,7 +16,8 @@ services:
     ports:
       - "127.0.0.1:8088:8088"
     # environment:
-    #   - QWENPAW_AUTH_ENABLED=true
+    #   - QWENPAW_AUTH_USERNAME=admin
+    #   - QWENPAW_AUTH_PASSWORD=change-me
     #   - QWENPAW_AUTH_USERNAME=admin
     #   - QWENPAW_AUTH_PASSWORD=yourpassword
     volumes:

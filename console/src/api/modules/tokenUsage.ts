@@ -6,6 +6,8 @@ export interface GetTokenUsageParams {
   end_date: string;
   model?: string;
   provider?: string;
+  /** Admin only: aggregate token usage across all users */
+  scope?: "all";
 }
 
 function buildQuery(params: GetTokenUsageParams): string {
@@ -15,6 +17,7 @@ function buildQuery(params: GetTokenUsageParams): string {
   });
   if (params.model) search.set("model", params.model);
   if (params.provider) search.set("provider", params.provider);
+  if (params.scope) search.set("scope", params.scope);
   return `?${search.toString()}`;
 }
 

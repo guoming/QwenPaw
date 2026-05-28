@@ -1,18 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
 import { Card, Empty, Button } from "@agentscope-ai/design";
-import { Spin, Tooltip } from "antd";
+import { Spin, Tooltip, Segmented } from "antd";
 import { DatePicker } from "antd";
 import type { Dayjs } from "dayjs";
 import dayjs from "dayjs";
 import { useTranslation } from "react-i18next";
 import { Column, Pie } from "@ant-design/plots";
 import api from "../../../api";
+import { authApi } from "../../../api/modules/auth";
+import { getApiToken, setAuthSession } from "../../../api/config";
 import type { AgentStatsSummary } from "../../../api/types/agentStats";
 import { PageHeader } from "@/components/PageHeader";
 import { useAppMessage } from "../../../hooks/useAppMessage";
 import { formatCompact } from "../../../utils/formatNumber";
 import { useTheme } from "../../../contexts/ThemeContext";
 import { useAgentStore } from "../../../stores/agentStore";
+import { useIsAdmin } from "../../../hooks/useIsAdmin";
 import { SummaryCard } from "./SummaryCard";
 import styles from "./index.module.less";
 
@@ -95,14 +98,19 @@ function getColumnConfig(
   return config;
 }
 
+type StatsScope = "mine" | "all";
+
 function AgentStatsPage() {
   const { t } = useTranslation();
   const { message } = useAppMessage();
   const { isDark: isDarkMode } = useTheme();
   const { selectedAgent } = useAgentStore();
+  const [isAdmin, setIsAdmin] = useState(useIsAdmin());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<AgentStatsSummary | null>(null);
+  const [scope, setScope] = useState<StatsScope>("mine");
+  const [adminChecked, setAdminChecked] = useState(false);
   const [startDate, setStartDate] = useState<Dayjs>(dayjs().subtract(7, "day"));
   const [endDate, setEndDate] = useState<Dayjs>(dayjs());
 
@@ -113,6 +121,7 @@ function AgentStatsPage() {
       const summary = await api.getAgentStats({
         start_date: start.format("YYYY-MM-DD"),
         end_date: end.format("YYYY-MM-DD"),
+        ...(isAdmin && scope === "all" ? { scope: "all" as const } : {}),
       });
       setData(summary);
     } catch (e) {
@@ -127,8 +136,35 @@ function AgentStatsPage() {
   };
 
   useEffect(() => {
+    const token = getApiToken();
+    if (!token) {
+      setAdminChecked(true);
+      return;
+    }
+    authApi
+      .verify()
+      .then((verified) => {
+        setAuthSession(
+          token,
+          verified.username,
+          verified.user_id,
+          verified.is_admin,
+        );
+        setIsAdmin(verified.is_admin);
+        if (!verified.is_admin) {
+          setScope("mine");
+        }
+      })
+      .catch(() => {})
+      .finally(() => setAdminChecked(true));
+  }, []);
+
+  useEffect(() => {
+    if (!adminChecked) {
+      return;
+    }
     fetchData(startDate, endDate);
-  }, [selectedAgent]);
+  }, [adminChecked, selectedAgent, scope, isAdmin]);
 
   const handleDateChange = (dates: [Dayjs | null, Dayjs | null] | null) => {
     const newStart = dates?.[0] || startDate;
@@ -310,6 +346,16 @@ function AgentStatsPage() {
                   current && current.isAfter(dayjs(), "day")
                 }
               />
+              {isAdmin && (
+                <Segmented
+                  value={scope}
+                  onChange={(value) => setScope(value as StatsScope)}
+                  options={[
+                    { label: t("tokenUsage.scopeMine"), value: "mine" },
+                    { label: t("tokenUsage.scopeAll"), value: "all" },
+                  ]}
+                />
+              )}
               {loading && <Spin size="small" />}
             </div>
 
