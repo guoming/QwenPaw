@@ -167,6 +167,25 @@
   color: rgba(0, 0, 0, 0.4);
 }
 
+.dropdownCreateButton {
+  padding: 0 !important;
+  height: auto !important;
+  font-size: 12px !important;
+}
+
+.emptyState {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 0 4px;
+}
+
+.emptyStateText {
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.45);
+}
+
 // ─── Dropdown ─────────────────────────────────────────────────────────────────
 .agentSelectorDropdown {
   border-radius: 12px !important;
@@ -290,6 +309,41 @@
   }
 }
 
+.agentOptionActions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  margin-left: 4px;
+}
+
+.agentOptionActionButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+  transition: all 0.15s ease;
+
+  &:hover {
+    background: rgba(43, 18, 0, 0.08);
+    color: #f07e26;
+  }
+}
+
+.agentOptionActionButtonDanger {
+  &:hover {
+    background: rgba(255, 77, 79, 0.1);
+    color: #ff4d4f;
+  }
+}
+
 .activeIndicator {
   flex-shrink: 0;
   color: #f07e26;
@@ -361,6 +415,10 @@
 
   .dropdownHeaderTitle {
     color: rgba(255, 255, 255, 0.4);
+  }
+
+  .emptyStateText {
+    color: rgba(255, 255, 255, 0.5);
   }
 
   .agentSelector {
@@ -459,6 +517,20 @@
 
   .agentOptionName {
     color: rgba(255, 255, 255, 0.88);
+  }
+
+  .agentOptionActionButton {
+    color: rgba(255, 255, 255, 0.45);
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.08);
+      color: #f5a05a;
+    }
+  }
+
+  .agentOptionActionButtonDanger:hover {
+    background: rgba(255, 77, 79, 0.15);
+    color: #ff7875;
   }
 
   .agentOptionDescription {

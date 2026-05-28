@@ -22,6 +22,11 @@ def path_requires_admin_write(path: str, method: str) -> bool:
         if not suffix:
             return True
         first = suffix.split("/")[0]
+        if first == "from-template":
+            return False
+        parts = suffix.rstrip("/").split("/")
+        if len(parts) == 2 and parts[1] == "self":
+            return False
         if first == "order":
             return True
         if "/" not in suffix.rstrip("/"):

@@ -76,7 +76,44 @@ class MultiAgentManager:
                 event = self._pending_starts[cache_key]
             else:
                 config = load_config()
-                if agent_id not in config.agents.profiles:
+                agent_ref = None
+                if agent_id in config.agents.profiles:
+                    agent_ref = config.agents.profiles[agent_id]
+                elif user_id:
+                    from .user_agent_registry import (
+                        agent_available_for_user,
+                        resolve_user_agent_template_workspace_dir,
+                    )
+
+                    if not agent_available_for_user(user_id, agent_id):
+                        raise ConfigurationException(
+                            config_key="agent",
+                            message=(
+                                f"Agent '{agent_id}' not found in configuration. "
+                                f"Available agents: "
+                                f"{list(config.agents.profiles.keys())}"
+                            ),
+                        )
+                    template_ws = resolve_user_agent_template_workspace_dir(
+                        user_id,
+                        agent_id,
+                    )
+                    if template_ws is None:
+                        raise ConfigurationException(
+                            config_key="agent",
+                            message=(
+                                f"Agent '{agent_id}' not found in configuration. "
+                                f"Available agents: "
+                                f"{list(config.agents.profiles.keys())}"
+                            ),
+                        )
+
+                    class _UserPrivateAgentRef:
+                        workspace_dir = str(template_ws)
+                        enabled = True
+
+                    agent_ref = _UserPrivateAgentRef()
+                if agent_ref is None:
                     raise ConfigurationException(
                         config_key="agent",
                         message=(
@@ -85,7 +122,6 @@ class MultiAgentManager:
                             f"{list(config.agents.profiles.keys())}"
                         ),
                     )
-                agent_ref = config.agents.profiles[agent_id]
                 event = asyncio.Event()
                 self._pending_starts[cache_key] = event
                 should_start = True
@@ -341,14 +377,31 @@ class MultiAgentManager:
             )
 
         config = load_config()
-        if agent_id not in config.agents.profiles:
+        agent_ref = None
+        if agent_id in config.agents.profiles:
+            agent_ref = config.agents.profiles[agent_id]
+        elif user_id:
+            from .user_agent_registry import (
+                resolve_user_agent_template_workspace_dir,
+            )
+
+            template_ws = resolve_user_agent_template_workspace_dir(
+                user_id,
+                agent_id,
+            )
+            if template_ws is not None:
+
+                class _UserPrivateAgentRef:
+                    workspace_dir = str(template_ws)
+
+                agent_ref = _UserPrivateAgentRef()
+        if agent_ref is None:
             logger.error(
                 "Agent '%s' not found in configuration during reload",
                 agent_id,
             )
             return False
 
-        agent_ref = config.agents.profiles[agent_id]
         new_instance = Workspace(
             agent_id=agent_id,
             workspace_dir=agent_ref.workspace_dir,

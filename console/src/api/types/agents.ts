@@ -15,6 +15,17 @@ export interface AgentListResponse {
   agents: AgentSummary[];
 }
 
+export interface AgentTemplateSummary {
+  id: string;
+  name: string;
+  description: string;
+  enabled: boolean;
+}
+
+export interface AgentTemplateListResponse {
+  templates: AgentTemplateSummary[];
+}
+
 export interface ReorderAgentsResponse {
   success: boolean;
   agent_ids: string[];
@@ -45,6 +56,20 @@ export interface CreateAgentRequest {
   language?: string;
   skill_names?: string[];
   active_model?: ModelSlotConfig | null;
+}
+
+export interface CreateAgentFromTemplateRequest {
+  template_agent_id: string;
+  name?: string;
+  description?: string;
+  workspace_dir?: string;
+  skill_names?: string[];
+  active_model?: ModelSlotConfig | null;
+}
+
+export interface UpdatePrivateAgentRequest {
+  name?: string;
+  description?: string;
 }
 
 export interface AgentProfileRef {

@@ -7,7 +7,6 @@ from typing import Literal, Optional
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from ...config import load_config
 from ..agent_context import get_agent_for_request
 
 router = APIRouter(prefix="/agent-status", tags=["agent-status"])
@@ -66,16 +65,20 @@ async def get_agent_status(
             detail="agentId is required",
         )
 
-    # Load config once to check agent existence and enabled status
-    config = load_config()
-    if agent_id not in config.agents.profiles:
+    from ..deps import get_request_user_id
+    from ..user_agent_registry import (
+        agent_available_for_user,
+        is_agent_enabled_for_user,
+    )
+
+    user_id = get_request_user_id(request)
+    if not agent_available_for_user(user_id, agent_id):
         raise HTTPException(
             status_code=404,
             detail=f"Agent '{agent_id}' not found",
         )
 
-    agent_ref = config.agents.profiles[agent_id]
-    is_enabled = getattr(agent_ref, "enabled", True)
+    is_enabled = is_agent_enabled_for_user(user_id, agent_id)
 
     # If disabled, return disabled status immediately
     if not is_enabled:

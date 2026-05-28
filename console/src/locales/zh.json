@@ -203,6 +203,7 @@
     "delete": "删除",
     "deleteConfirm": "确认删除智能体",
     "deleteConfirmDesc": "删除后智能体将不可用，但工作区文件会保留",
+    "deletePrivateConfirmDesc": "确定删除智能体「{{name}}」？其私有配置与工作区数据将被移除，此操作不可恢复。",
     "deleteSuccess": "智能体删除成功",
     "deleteFailed": "智能体删除失败",
     "selectAgent": "选择智能体",
@@ -253,7 +254,13 @@
     "modelHelp": "为此智能体指定特定的 LLM 模型。留空则使用全局默认模型。",
     "modelPlaceholder": "使用全局默认",
     "noConfiguredModels": "暂无已配置的模型",
-    "modelColumn": "模型"
+    "modelColumn": "模型",
+    "noPrivateAgents": "你还没有智能体，请先创建",
+    "createFirstAgent": "创建智能体",
+    "template": "模板",
+    "templateRequired": "请选择模板",
+    "templateChanged": "模板已变更，请重新选择",
+    "createFromTemplateHint": "工作区、模型与技能将继承所选模板的配置；名称与描述可留空以使用模板默认值。"
   },
   "acp": {
     "title": "ACP",

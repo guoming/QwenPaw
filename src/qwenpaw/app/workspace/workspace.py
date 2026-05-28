@@ -393,6 +393,10 @@ class Workspace:
 
         logger.info(f"Starting workspace: {self.agent_id}")
 
+        from ...config.context import set_current_user_id
+
+        set_current_user_id(self.user_id)
+
         from ...agents.skill_system import (
             ensure_skill_pool_initialized,
         )

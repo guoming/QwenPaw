@@ -53,6 +53,24 @@ def test_non_admin_can_read_agents_list(app_server: AppServer) -> None:
     assert isinstance(resp.json().get("agents"), list)
 
 
+def test_new_user_agents_list_is_empty_before_self_provision(
+    app_server: AppServer,
+) -> None:
+    token = register(
+        app_server.client,
+        app_server.base_url,
+        "integ_user_empty_list",
+        "integ_user_empty_list_secret",
+    )
+    resp = app_server.api_request(
+        "GET",
+        "/api/agents",
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 200, app_server.logs_tail()
+    assert resp.json().get("agents") == []
+
+
 def test_non_admin_cannot_toggle_agent(app_server: AppServer) -> None:
     token_b = register(
         app_server.client,

@@ -400,6 +400,7 @@
     "delete": "Delete",
     "deleteConfirm": "Confirm Delete Agent",
     "deleteConfirmDesc": "Agent will be unavailable after deletion, but workspace files will be kept",
+    "deletePrivateConfirmDesc": "Delete agent \"{{name}}\"? Its private configuration and workspace data will be removed. This cannot be undone.",
     "deleteSuccess": "Agent deleted successfully",
     "deleteFailed": "Failed to delete agent",
     "selectAgent": "Select Agent",
@@ -450,7 +451,13 @@
     "modelHelp": "Assign a specific LLM model to this agent. Leave empty to use the global default.",
     "modelPlaceholder": "Use global default",
     "noConfiguredModels": "No configured models",
-    "modelColumn": "Model"
+    "modelColumn": "Model",
+    "noPrivateAgents": "You don't have any agents yet. Create one first.",
+    "createFirstAgent": "Create Agent",
+    "template": "Template",
+    "templateRequired": "Please select a template",
+    "templateChanged": "Template changed. Please choose again.",
+    "createFromTemplateHint": "Workspace, model, and skills inherit from the selected template. Leave name and description empty to use template defaults."
   },
   "skills": {
     "title": "Skills",
