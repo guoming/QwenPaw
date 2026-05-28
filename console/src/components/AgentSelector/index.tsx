@@ -1,12 +1,11 @@
 import { Select, Tag, Tooltip } from "antd";
 import { useEffect, useState } from "react";
-import { Bot, CheckCircle, EyeOff, ChevronRight } from "lucide-react";
+import { Bot, CheckCircle, EyeOff } from "lucide-react";
 import { SparkDownLine, SparkUpLine } from "@agentscope-ai/icons";
 import { useAgentStore } from "../../stores/agentStore";
 import { agentsApi } from "../../api/modules/agents";
 import { useTranslation } from "react-i18next";
 import { getAgentDisplayName } from "../../utils/agentDisplayName";
-import { useNavigate } from "react-router-dom";
 import { useAppMessage } from "../../hooks/useAppMessage";
 import styles from "./index.module.less";
 
@@ -18,7 +17,6 @@ export default function AgentSelector({
   collapsed = false,
 }: AgentSelectorProps) {
   const { t } = useTranslation();
-  const navigate = useNavigate();
   const { selectedAgent, agents, setSelectedAgent, setAgents } =
     useAgentStore();
   const { message } = useAppMessage();
@@ -130,13 +128,6 @@ export default function AgentSelector({
               <span className={styles.dropdownHeaderTitle}>
                 {t("agent.currentWorkspace")}
               </span>
-              <button
-                className={styles.managementLink}
-                onClick={() => navigate("/agents")}
-              >
-                {t("agent.management")}
-                <ChevronRight size={12} strokeWidth={2.5} />
-              </button>
             </div>
             {menu}
           </>

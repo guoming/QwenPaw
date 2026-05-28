@@ -1,4 +1,4 @@
-import { Suspense, type ReactElement } from "react";
+import { Suspense } from "react";
 import { Layout, Spin } from "antd";
 import { Routes, Route, useLocation, Navigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -10,8 +10,8 @@ import { lazyImportWithRetry } from "../../utils/lazyWithRetry";
 import { usePlugins } from "../../plugins/PluginContext";
 import { useCodingMode } from "../../stores/codingModeStore";
 import { useSyncCodingMode } from "../../stores/useSyncCodingMode";
-import { useIsAdmin } from "../../hooks/useIsAdmin";
 import SettingsPageShell from "../../components/SettingsPageShell";
+import AdminOnlyRoute from "../../components/AdminOnlyRoute";
 import styles from "../index.module.less";
 
 // Chat is eagerly loaded (default landing page)
@@ -71,14 +71,6 @@ function DefaultRedirect() {
     );
   }
   return <Navigate to={codingMode ? "/coding" : "/chat"} replace />;
-}
-
-function AdminOnlyRoute({ children }: { children: ReactElement }) {
-  const isAdmin = useIsAdmin();
-  if (!isAdmin) {
-    return <Navigate to="/chat" replace />;
-  }
-  return children;
 }
 
 const pathToKey: Record<string, string> = {
@@ -182,9 +174,11 @@ export default function MainLayout() {
                   <Route
                     path="/agents"
                     element={
-                      <SettingsPageShell>
-                        <AgentsPage />
-                      </SettingsPageShell>
+                      <AdminOnlyRoute>
+                        <SettingsPageShell>
+                          <AgentsPage />
+                        </SettingsPageShell>
+                      </AdminOnlyRoute>
                     }
                   />
                   <Route

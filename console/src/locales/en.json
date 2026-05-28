@@ -30,7 +30,8 @@
     "clear": "Clear",
     "paste": "Paste",
     "yes": "Yes",
-    "no": "No"
+    "no": "No",
+    "forbidden": "You do not have permission to access this page."
   },
   "chunkError": {
     "title": "Failed to load page",
