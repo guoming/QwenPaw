@@ -3,12 +3,11 @@ import { screen, waitFor } from "@testing-library/react";
 import { renderWithProviders } from "@/test/common_setup";
 import AgentSelector from "./index";
 
-const { mockSetSelectedAgent, mockSetAgents, mockListAgents, mockNavigate } =
+const { mockSetSelectedAgent, mockSetAgents, mockListAgents } =
   vi.hoisted(() => ({
     mockSetSelectedAgent: vi.fn(),
     mockSetAgents: vi.fn(),
     mockListAgents: vi.fn(),
-    mockNavigate: vi.fn(),
   }));
 
 vi.mock("@/api/modules/agents", () => ({
@@ -27,11 +26,6 @@ vi.mock("@/stores/agentStore", () => ({
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (k: string) => k }),
 }));
-
-vi.mock("react-router-dom", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("react-router-dom")>();
-  return { ...actual, useNavigate: () => mockNavigate };
-});
 
 const mockAgentsData = {
   agents: [
@@ -76,5 +70,17 @@ describe("AgentSelector", () => {
     mockListAgents.mockRejectedValue(new Error("network error"));
     expect(() => renderWithProviders(<AgentSelector />)).not.toThrow();
     await waitFor(() => expect(mockListAgents).toHaveBeenCalled());
+  });
+
+  it("does not expose management entry in selector dropdown", async () => {
+    renderWithProviders(<AgentSelector />);
+    await waitFor(() => expect(mockListAgents).toHaveBeenCalled());
+
+    const combo = screen.getByRole("combobox");
+    combo.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+
+    await waitFor(() => {
+      expect(screen.queryByText("agent.management")).not.toBeInTheDocument();
+    });
   });
 });

@@ -455,6 +455,7 @@ async def toggle_agent_enabled(
     request: Request = None,
 ) -> dict:
     """Toggle agent enabled state."""
+    require_admin(request)
     config = load_config()
 
     if agentId not in config.agents.profiles:
