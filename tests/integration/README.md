@@ -136,7 +136,8 @@ The fixture:
 
 - Sanitizes 11 sensitive environment variables (`OPENAI_API_KEY`,
   `DASHSCOPE_API_KEY`, IM tokens, etc.) before launching
-- Forces `QWENPAW_AUTH_ENABLED=false` and `NO_PROXY=*`
+- Auto-registers an admin user via `QWENPAW_AUTH_USERNAME` / `QWENPAW_AUTH_PASSWORD` and sets `Authorization` on the HTTP client
+- Sets `NO_PROXY=*`
 - Allocates a random free port via `socket.bind(0)`
 - Polls `/api/version` for up to 60s as the readiness signal
 - Uses **SIGINT** at teardown so uvicorn's atexit hooks flush state and

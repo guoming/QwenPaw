@@ -1,4 +1,5 @@
 import { getApiUrl, clearAuthToken } from "./config";
+import { getLoginUrl, isLoginPath } from "../utils/routerBasename";
 import { buildAuthHeaders } from "./authHeaders";
 
 function getErrorMessageFromBody(
@@ -73,8 +74,8 @@ export async function request<T = unknown>(
   if (!response.ok) {
     if (response.status === 401) {
       clearAuthToken();
-      if (window.location.pathname !== "/login") {
-        window.location.href = "/login";
+      if (!isLoginPath()) {
+        window.location.href = getLoginUrl();
       }
       throw new Error("Not authenticated");
     }

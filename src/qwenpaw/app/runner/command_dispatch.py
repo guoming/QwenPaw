@@ -135,14 +135,23 @@ async def run_command_path(  # pylint: disable=too-many-statements,too-many-bran
             yield hint, True
 
         agent_id = runner.agent_id
+        auth_user_id = (
+            getattr(getattr(runner, "_workspace", None), "user_id", None)
+            or user_id
+            or None
+        )
         daemon_ctx = DaemonContext(
-            load_config_fn=lambda: load_agent_config(agent_id),
+            load_config_fn=lambda: load_agent_config(
+                agent_id,
+                user_id=auth_user_id,
+            ),
             memory_manager=runner.memory_manager,
             context_manager=runner.context_manager,
             manager=manager,
             agent_id=agent_id,
             session_id=session_id,
             agent_name=runner.agent_name,
+            auth_user_id=auth_user_id,
         )
         msg = await handler.handle_daemon_command(query, daemon_ctx)
         if parsed[0] in ("reload-config", "restart"):

@@ -7,10 +7,12 @@ import { usePluginColumns } from "./hooks/usePluginColumns";
 import { useInstallModal } from "./hooks/useInstallModal";
 import { InstallPluginModal } from "./components/InstallPluginModal";
 import { OfficialPluginList } from "./components/OfficialPluginList";
+import { useSettingsWriteProps } from "../../../components/SettingsPageShell";
 import styles from "./index.module.less";
 
 export default function PluginManagerPage() {
   const { t } = useTranslation();
+  const writeProps = useSettingsWriteProps();
 
   const { plugins, loading, refresh, uninstallingId, handleUninstall } =
     usePluginManager();
@@ -63,6 +65,7 @@ export default function PluginManagerPage() {
             type="primary"
             icon={<Plus size={16} />}
             onClick={installModal.openModal}
+            {...writeProps}
           >
             {t("pluginManager.installBtn")}
           </Button>

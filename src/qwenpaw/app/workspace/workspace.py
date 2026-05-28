@@ -30,7 +30,12 @@ from ..runner.task_tracker import TaskTracker
 from ..mcp import MCPClientManager
 from ..crons.manager import CronManager
 from ..crons.repo.json_repo import JsonJobRepository
+from ... import constant
 from ...config.config import load_agent_config
+from ..user_agent_registry import (
+    resolve_user_workspace_dir,
+    seed_user_workspace_from_template,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -48,16 +53,39 @@ class Workspace:
     All components use existing single-agent code without modification.
     """
 
-    def __init__(self, agent_id: str, workspace_dir: str):
+    def __init__(
+        self,
+        agent_id: str,
+        workspace_dir: str,
+        user_id: str | None = None,
+    ):
         """Initialize agent instance.
 
         Args:
             agent_id: Unique agent identifier
-            workspace_dir: Path to agent's workspace directory
+            workspace_dir: Path to agent's workspace directory (global template)
+            user_id: Authenticated user id for per-user runtime isolation
         """
         self.agent_id = agent_id
-        self.workspace_dir = Path(workspace_dir).expanduser()
+        self.user_id = user_id
+        template_dir = Path(workspace_dir).expanduser()
+
+        if user_id:
+            self.workspace_dir = resolve_user_workspace_dir(user_id, agent_id)
+            seed_user_workspace_from_template(
+                self.workspace_dir,
+                template_dir,
+                agent_id,
+            )
+            self._data_dir = (
+                constant.USERS_DIR / user_id / "agent_data" / agent_id
+            )
+        else:
+            self.workspace_dir = template_dir
+            self._data_dir = self.workspace_dir
+
         self.workspace_dir.mkdir(parents=True, exist_ok=True)
+        self._data_dir.mkdir(parents=True, exist_ok=True)
 
         # Service manager (unified component management)
         self._service_manager = ServiceManager(self)
@@ -118,9 +146,17 @@ class Workspace:
         return self._task_tracker
 
     @property
+    def data_dir(self) -> Path:
+        """Runtime data directory (chats, sessions, jobs, memory)."""
+        return self._data_dir
+
+    @property
     def config(self):
         """Get agent configuration."""
-        self._config = load_agent_config(self.agent_id)
+        self._config = load_agent_config(
+            self.agent_id,
+            user_id=self.user_id,
+        )
         return self._config
 
     def set_manager(self, manager) -> None:
@@ -176,7 +212,7 @@ class Workspace:
                     ws._config.running.memory_manager_backend,
                 ),
                 init_args=lambda ws: {
-                    "working_dir": str(ws.workspace_dir),
+                    "working_dir": str(ws.data_dir),
                     "agent_id": ws.agent_id,
                 },
                 post_init=lambda ws, mm: setattr(
@@ -199,7 +235,7 @@ class Workspace:
                     ws._config.running.context_manager_backend,
                 ),
                 init_args=lambda ws: {
-                    "working_dir": str(ws.workspace_dir),
+                    "working_dir": str(ws.data_dir),
                     "agent_id": ws.agent_id,
                 },
                 post_init=lambda ws, cm: setattr(
@@ -270,7 +306,7 @@ class Workspace:
                 service_class=CronManager,
                 init_args=lambda ws: {  # pylint: disable=protected-access
                     "repo": JsonJobRepository(
-                        str(ws.workspace_dir / "jobs.json"),
+                        str(ws.data_dir / "jobs.json"),
                     ),
                     "runner": ws._service_manager.services["runner"],
                     "channel_manager": ws._service_manager.services.get(
@@ -281,6 +317,7 @@ class Workspace:
                     )
                     or "UTC",
                     "agent_id": ws.agent_id,
+                    "auth_user_id": ws.user_id,
                 },
                 start_method="start",
                 stop_method="stop",
@@ -369,7 +406,10 @@ class Workspace:
 
         try:
             # 1. Load agent configuration
-            self._config = load_agent_config(self.agent_id)
+            self._config = load_agent_config(
+                self.agent_id,
+                user_id=self.user_id,
+            )
             logger.debug(f"Loaded config for agent: {self.agent_id}")
 
             # 2. Run legacy weixin -> wechat data migrations BEFORE services
@@ -402,7 +442,7 @@ class Workspace:
 
         try:
             migrate_legacy_weixin_chats_file(
-                self.workspace_dir / "chats.json",
+                self.data_dir / "chats.json",
             )
         except Exception as exc:
             logger.warning(
@@ -414,7 +454,7 @@ class Workspace:
 
         try:
             migrate_legacy_weixin_jobs_file(
-                self.workspace_dir / "jobs.json",
+                self.data_dir / "jobs.json",
             )
         except Exception as exc:
             logger.warning(
@@ -426,7 +466,7 @@ class Workspace:
 
         try:
             migrate_legacy_weixin_session_files(
-                str(self.workspace_dir / "sessions"),
+                str(self.data_dir / "sessions"),
             )
         except Exception as exc:
             logger.warning(

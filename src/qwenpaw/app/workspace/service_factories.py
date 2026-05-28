@@ -50,7 +50,7 @@ async def create_chat_service(ws: "Workspace", service):
         logger.info(f"Reusing ChatManager for {ws.agent_id}")
     else:
         # Create new ChatManager
-        chats_path = str(ws.workspace_dir / "chats.json")
+        chats_path = str(ws.data_dir / "chats.json")
         chat_repo = JsonChatRepository(chats_path)
         cm = ChatManager(repo=chat_repo)
         ws._service_manager.services["chat_manager"] = cm
@@ -143,10 +143,16 @@ async def create_agent_config_watcher(ws: "Workspace", _):
 
     from ..agent_config_watcher import AgentConfigWatcher
 
+    from ...config.config import resolve_agent_config_path
+
     watcher = AgentConfigWatcher(
         agent_id=ws.agent_id,
-        workspace_dir=ws.workspace_dir,
+        config_path=resolve_agent_config_path(
+            ws.agent_id,
+            user_id=ws.user_id,
+        ),
         workspace=ws,
+        user_id=ws.user_id,
     )
     ws._service_manager.services["agent_config_watcher"] = watcher
     return watcher
@@ -169,16 +175,22 @@ async def create_mcp_config_watcher(ws: "Workspace", _):
         return None
 
     from ..mcp.watcher import MCPConfigWatcher
-    from ...config.config import load_agent_config
+    from ...config.config import load_agent_config, resolve_agent_config_path
 
     def mcp_config_loader():
-        agent_config = load_agent_config(ws.agent_id)
+        agent_config = load_agent_config(
+            ws.agent_id,
+            user_id=ws.user_id,
+        )
         return agent_config.mcp
 
     watcher = MCPConfigWatcher(
         mcp_manager=mcp_mgr,
         config_loader=mcp_config_loader,
-        config_path=ws.workspace_dir / "agent.json",
+        config_path=resolve_agent_config_path(
+            ws.agent_id,
+            user_id=ws.user_id,
+        ),
     )
     ws._service_manager.services["mcp_config_watcher"] = watcher
     return watcher

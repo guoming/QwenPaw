@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { DatePicker } from "antd";
+import { DatePicker, Segmented } from "antd";
 import { useTranslation } from "react-i18next";
 import dayjs, { type Dayjs } from "dayjs";
 import { useTheme } from "../../../contexts/ThemeContext";
 import api from "../../../api";
+import { authApi } from "../../../api/modules/auth";
+import { getApiToken, setAuthSession } from "../../../api/config";
 import type { TokenUsageRecord } from "../../../api/types/tokenUsage";
 import { useAppMessage } from "../../../hooks/useAppMessage";
+import { useIsAdmin } from "../../../hooks/useIsAdmin";
 import { PageHeader } from "@/components/PageHeader";
 import {
   LoadingState,
@@ -20,13 +23,18 @@ import { useModelTrendConfig } from "./hooks/useModelTrendConfig";
 import { useTokenTypeConfig } from "./hooks/useTokenTypeConfig";
 import styles from "./index.module.less";
 
+type TokenScope = "mine" | "all";
+
 function TokenUsagePage() {
   const { t } = useTranslation();
   const { message } = useAppMessage();
   const { isDark } = useTheme();
+  const [isAdmin, setIsAdmin] = useState(useIsAdmin());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [records, setRecords] = useState<TokenUsageRecord[]>([]);
+  const [scope, setScope] = useState<TokenScope>("mine");
+  const [adminChecked, setAdminChecked] = useState(false);
   const [startDate, setStartDate] = useState<Dayjs>(
     dayjs().subtract(30, "day"),
   );
@@ -39,6 +47,7 @@ function TokenUsagePage() {
       const detailsData = await api.getTokenUsageDetails({
         start_date: startDate.format("YYYY-MM-DD"),
         end_date: endDate.format("YYYY-MM-DD"),
+        ...(isAdmin && scope === "all" ? { scope: "all" as const } : {}),
       });
       setRecords(detailsData);
     } catch (err) {
@@ -49,11 +58,38 @@ function TokenUsagePage() {
     } finally {
       setLoading(false);
     }
-  }, [startDate, endDate, message, t]);
+  }, [startDate, endDate, message, t, isAdmin, scope]);
 
   useEffect(() => {
+    const token = getApiToken();
+    if (!token) {
+      setAdminChecked(true);
+      return;
+    }
+    authApi
+      .verify()
+      .then((verified) => {
+        setAuthSession(
+          token,
+          verified.username,
+          verified.user_id,
+          verified.is_admin,
+        );
+        setIsAdmin(verified.is_admin);
+        if (!verified.is_admin) {
+          setScope("mine");
+        }
+      })
+      .catch(() => {})
+      .finally(() => setAdminChecked(true));
+  }, []);
+
+  useEffect(() => {
+    if (!adminChecked) {
+      return;
+    }
     fetchData();
-  }, [fetchData]);
+  }, [adminChecked, fetchData]);
 
   const handleDateChange = (dates: [Dayjs | null, Dayjs | null] | null) => {
     if (!dates || !dates[0] || !dates[1]) return;
@@ -140,6 +176,16 @@ function TokenUsagePage() {
               current && current.isAfter(dayjs(), "day")
             }
           />
+          {isAdmin && (
+            <Segmented
+              value={scope}
+              onChange={(value) => setScope(value as TokenScope)}
+              options={[
+                { label: t("tokenUsage.scopeMine"), value: "mine" },
+                { label: t("tokenUsage.scopeAll"), value: "all" },
+              ]}
+            />
+          )}
         </div>
 
         {aggregatedData && (

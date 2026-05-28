@@ -163,7 +163,7 @@ async def list_tools(
     from ...plugins.registry import PluginRegistry
 
     workspace = await get_agent_for_request(request)
-    agent_config = load_agent_config(workspace.agent_id)
+    agent_config = load_agent_config(workspace.agent_id, user_id=workspace.user_id)
 
     # Ensure tools config exists with defaults
     if not agent_config.tools or not agent_config.tools.builtin_tools:
@@ -285,7 +285,7 @@ async def toggle_tool(
     from ...config.config import load_agent_config, save_agent_config
 
     workspace = await get_agent_for_request(request)
-    agent_config = load_agent_config(workspace.agent_id)
+    agent_config = load_agent_config(workspace.agent_id, user_id=workspace.user_id)
 
     if (
         not agent_config.tools
@@ -301,7 +301,7 @@ async def toggle_tool(
     tool_config.enabled = not tool_config.enabled
 
     # Save agent config
-    save_agent_config(workspace.agent_id, agent_config)
+    save_agent_config(workspace.agent_id, agent_config, user_id=workspace.user_id)
 
     # Hot reload config (async, non-blocking)
     schedule_agent_reload(request, workspace.agent_id)
@@ -332,7 +332,7 @@ async def update_tool_async_execution(
     from ...config.config import load_agent_config, save_agent_config
 
     workspace = await get_agent_for_request(request)
-    agent_config = load_agent_config(workspace.agent_id)
+    agent_config = load_agent_config(workspace.agent_id, user_id=workspace.user_id)
 
     if (
         not agent_config.tools
@@ -348,7 +348,7 @@ async def update_tool_async_execution(
     tool_config.async_execution = async_execution
 
     # Save agent config
-    save_agent_config(workspace.agent_id, agent_config)
+    save_agent_config(workspace.agent_id, agent_config, user_id=workspace.user_id)
 
     # Hot reload config (async, non-blocking)
     schedule_agent_reload(request, workspace.agent_id)

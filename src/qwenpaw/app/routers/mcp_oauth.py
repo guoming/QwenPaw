@@ -43,6 +43,7 @@ class OAuthSession:
     def __init__(
         self,
         agent_id: str,
+        user_id: str | None,
         client_key: str,
         code_verifier: str,
         client_id: str,
@@ -53,6 +54,7 @@ class OAuthSession:
     ) -> None:
         """Initialise OAuth session."""
         self.agent_id = agent_id
+        self.user_id = user_id
         self.client_key = client_key
         self.code_verifier = code_verifier
         self.client_id = client_id
@@ -460,6 +462,7 @@ async def oauth_start(
     # -- Store session -----------------------------------------------------
     _state_store[state] = OAuthSession(
         agent_id=agent_id,
+        user_id=agent.user_id,
         client_key=client_key,
         code_verifier=verifier,
         client_id=client_id,
@@ -564,7 +567,7 @@ async def _persist_tokens(
         cfg = load_config()
         agent_id = cfg.agents.active_agent or "default"
 
-    workspace = await manager.get_agent(agent_id)
+    workspace = await manager.get_agent(agent_id, user_id=session.user_id)
     mcp_cfg = workspace.config.mcp
     client_cfg = mcp_cfg.clients.get(session.client_key) if mcp_cfg else None
     if client_cfg is None:
@@ -583,7 +586,11 @@ async def _persist_tokens(
         token_endpoint=session.token_endpoint,
         auth_endpoint=session.auth_endpoint or existing_oauth.auth_endpoint,
     )
-    save_agent_config(agent_id, workspace.config)
+    save_agent_config(
+        agent_id,
+        workspace.config,
+        user_id=session.user_id,
+    )
     schedule_agent_reload(request, agent_id)
 
 
@@ -700,7 +707,7 @@ async def oauth_revoke(
         )
 
     agent.config.mcp.clients[client_key].oauth = None
-    save_agent_config(agent.agent_id, agent.config)
+    save_agent_config(agent.agent_id, agent.config, user_id=agent.user_id)
     schedule_agent_reload(request, agent.agent_id)
 
     return {"message": "OAuth tokens cleared"}

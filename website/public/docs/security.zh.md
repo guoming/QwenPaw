@@ -584,26 +584,17 @@ scanner = SkillScanner(policy=policy)
 
 ## Web 登录认证
 
-QwenPaw 支持可选的 Web 登录认证,保护控制台免受未授权访问。认证**默认关闭**,需要通过 `QWENPAW_AUTH_ENABLED` 环境变量显式启用。
+QwenPaw 控制台在**已有注册用户后**始终要求登录。未注册时,首次访问会进入**注册页面**;**首个注册用户自动成为管理员**,可管理全局 Settings;后续用户为普通用户,拥有独立的 Agent 配置与运行时数据。
 
 ![login](https://img.alicdn.com/imgextra/i4/O1CN01VdXCuP1tWpsl0TlQ5_!!6000000005910-2-tps-3822-2070.png)
 
 ### 工作原理
 
-1. **启用认证** — 设置 `QWENPAW_AUTH_ENABLED=true` 并启动 QwenPaw
-2. **注册流程**:
-   - 首次访问时,控制台显示**注册页面**
-   - 创建唯一的管理员账户(用户名 + 密码)
-   - 系统采用单用户模式,专为个人使用设计
-3. **登录流程**:
-   - 注册完成后,后续访问显示**登录页面**
-   - 输入凭据后,生成签名令牌(有效期 7 天)
-   - 令牌存储在浏览器 localStorage,自动附加到所有 API 请求
-4. **自动注册**(可选):
-   - 设置 `QWENPAW_AUTH_USERNAME` 和 `QWENPAW_AUTH_PASSWORD` 环境变量
-   - QwenPaw 启动时自动创建管理员账户,跳过网页注册
-   - 适用于 Docker、Kubernetes、服务器管理面板等自动化部署场景
-5. **本地免认证** — 来自本地(`127.0.0.1` / `::1`)的请求自动跳过认证,CLI 命令(`qwenpaw app`、`qwenpaw chat` 等)无需令牌即可正常工作
+1. **首次注册** — 无用户时,控制台显示注册页;首个账户为管理员
+2. **多用户** — 可注册多个账户;各用户 Chat、Inbox、Channel、Agent 配置相互隔离
+3. **登录流程** — 输入凭据后生成签名令牌(默认 7 天有效),存储在浏览器 localStorage,并附加到 API 请求
+4. **自动注册**(可选) — 设置 `QWENPAW_AUTH_USERNAME` 与 `QWENPAW_AUTH_PASSWORD`,启动时自动创建首个管理员(适用于 Docker/K8s 等)
+5. **本地免认证白名单** — `config.json` 中 `security.allow_no_auth_hosts` 默认包含 `127.0.0.1` / `::1`,来自这些 IP 的 `/api/*` 请求可不带令牌(便于本机 CLI 联调);生产环境请勿对公网 IP 开放此列表
 
 **安全特性**:
 
@@ -614,11 +605,10 @@ QwenPaw 支持可选的 Web 登录认证,保护控制台免受未授权访问。
 
 ### 环境变量
 
-| 变量                    | 说明                         | 是否必填 |
-| ----------------------- | ---------------------------- | -------- |
-| `QWENPAW_AUTH_ENABLED`  | 设为 `true` 启用认证         | **是**   |
-| `QWENPAW_AUTH_USERNAME` | 自动注册时预设的管理员用户名 | 可选     |
-| `QWENPAW_AUTH_PASSWORD` | 自动注册时预设的管理员密码   | 可选     |
+| 变量                    | 说明                               | 是否必填 |
+| ----------------------- | ---------------------------------- | -------- |
+| `QWENPAW_AUTH_USERNAME` | 启动时自动创建首个管理员的用户名   | 可选     |
+| `QWENPAW_AUTH_PASSWORD` | 启动时自动创建首个管理员的密码     | 可选     |
 
 ### 认证豁免主机白名单
 
@@ -642,60 +632,39 @@ QwenPaw 支持可选的 Web 登录认证,保护控制台免受未授权访问。
 
 **配置说明**:
 
-- `QWENPAW_AUTH_ENABLED=true` 是启用认证的唯一必需变量
-- `QWENPAW_AUTH_USERNAME` 和 `QWENPAW_AUTH_PASSWORD` 成对使用:
-  - 两者都设置 → 启动时自动创建管理员账户(适用于自动化部署)
-  - 不设置或只设置其一 → 首次访问通过网页注册(交互式部署)
-- 如果已有注册用户,自动注册环境变量会被忽略
+- `QWENPAW_AUTH_USERNAME` 与 `QWENPAW_AUTH_PASSWORD` 成对使用:
+  - 两者都设置 → 启动时自动创建首个管理员(自动化部署)
+  - 不设置或只设置其一 → 首次访问通过网页注册
+- 若已有注册用户,自动注册环境变量会被忽略
 
-### 启用认证
+### 配置管理员账户
 
 #### 脚本安装 / pip 安装
-
-在启动前设置环境变量:
 
 **Linux / macOS:**
 
 ```bash
-# 基础启用(网页注册)
-export QWENPAW_AUTH_ENABLED=true
+# 网页注册(首次访问控制台)
 qwenpaw app
 
-# 或: 自动注册模式
-export QWENPAW_AUTH_ENABLED=true
+# 或: 启动时自动创建管理员
 export QWENPAW_AUTH_USERNAME=admin
 export QWENPAW_AUTH_PASSWORD=mypassword
-qwenpaw app
-```
-
-如需永久生效,将 `export` 行添加到 `~/.bashrc`、`~/.zshrc` 或等效文件中。
-
-**Windows (CMD):**
-
-```cmd
-set QWENPAW_AUTH_ENABLED=true
-rem 可选: 自动注册
-rem set QWENPAW_AUTH_USERNAME=admin
-rem set QWENPAW_AUTH_PASSWORD=mypassword
 qwenpaw app
 ```
 
 **Windows (PowerShell):**
 
 ```powershell
-$env:QWENPAW_AUTH_ENABLED = "true"
-# 可选: 自动注册
-# $env:QWENPAW_AUTH_USERNAME = "admin"
-# $env:QWENPAW_AUTH_PASSWORD = "mypassword"
+$env:QWENPAW_AUTH_USERNAME = "admin"
+$env:QWENPAW_AUTH_PASSWORD = "mypassword"
 qwenpaw app
 ```
 
 #### Docker
 
-通过 `-e` 传递环境变量(推荐使用自动注册):
-
 ```bash
-docker run -e QWENPAW_AUTH_ENABLED=true \
+docker run \
   -e QWENPAW_AUTH_USERNAME=admin \
   -e QWENPAW_AUTH_PASSWORD=mypassword \
   -p 127.0.0.1:8088:8088 \
@@ -705,7 +674,7 @@ docker run -e QWENPAW_AUTH_ENABLED=true \
   agentscope/qwenpaw:latest
 ```
 
-> **提示**: 不使用自动注册时,移除 `QWENPAW_AUTH_USERNAME` 和 `QWENPAW_AUTH_PASSWORD`,首次通过浏览器注册。
+> **提示**: 不使用自动注册时,省略用户名/密码环境变量,首次通过浏览器注册。
 
 #### docker-compose.yml
 
@@ -716,7 +685,6 @@ services:
     ports:
       - "127.0.0.1:8088:8088"
     environment:
-      - QWENPAW_AUTH_ENABLED=true
       - QWENPAW_AUTH_USERNAME=admin
       - QWENPAW_AUTH_PASSWORD=mypassword
     volumes:
@@ -727,28 +695,12 @@ services:
 
 #### 环境文件 (.env)
 
-也可以使用 `.env` 文件：
-
 ```
-QWENPAW_AUTH_ENABLED=true
 QWENPAW_AUTH_USERNAME=admin
 QWENPAW_AUTH_PASSWORD=mypassword
 ```
 
-然后通过 `--env-file .env` 传递给 Docker，或在运行 `qwenpaw app` 前在 shell 中 source 该文件。
-
-### 关闭认证
-
-移除或取消环境变量并重启 QwenPaw：
-
-```bash
-# Linux / macOS
-unset QWENPAW_AUTH_ENABLED
-qwenpaw app
-
-# Docker — 移除 -e 参数即可。以下示例包含用于持久化的卷。
-docker run -p 127.0.0.1:8088:8088 -v qwenpaw-data:/app/working -v qwenpaw-secrets:/app/working.secret -v qwenpaw-backups:/app/working.backups agentscope/qwenpaw:latest
-```
+通过 `--env-file .env` 传递给 Docker,或在运行 `qwenpaw app` 前 `source` 该文件。
 
 ### 重置密码
 

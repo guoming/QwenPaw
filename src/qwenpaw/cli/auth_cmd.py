@@ -6,10 +6,10 @@ import secrets
 import click
 
 from ..app.auth import (
+    _get_users,
     _hash_password,
     _load_auth_data,
     _save_auth_data,
-    is_auth_enabled,
 )
 
 
@@ -21,13 +21,6 @@ def auth_group() -> None:
 @auth_group.command("reset-password")
 def reset_password_cmd() -> None:
     """Reset the password for the registered web user."""
-    if not is_auth_enabled():
-        click.echo(
-            "Authentication is not enabled.\n"
-            "Set QWENPAW_AUTH_ENABLED=true to enable it first.",
-        )
-        return
-
     data = _load_auth_data()
 
     if data.get("_auth_load_error"):
@@ -35,11 +28,19 @@ def reset_password_cmd() -> None:
             "Failed to read auth data. Check auth.json for corruption.",
         )
 
-    user = data.get("user")
-    if not user:
+    users = _get_users(data)
+    if not users:
         click.echo("No registered user found. Nothing to reset.")
         return
 
+    if len(users) > 1:
+        click.echo(
+            f"Multiple users registered ({len(users)}). "
+            "Reset password via the web console account settings.",
+        )
+        return
+
+    user = users[0]
     username = user.get("username", "<unknown>")
     click.echo(f"Resetting password for user: {username}")
 

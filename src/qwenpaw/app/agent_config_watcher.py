@@ -47,24 +47,26 @@ class AgentConfigWatcher:
     def __init__(
         self,
         agent_id: str,
-        workspace_dir: Path,
+        config_path: Path,
         workspace: "Workspace",
+        user_id: str | None = None,
         poll_interval: float = DEFAULT_POLL_INTERVAL,
     ):
         """Initialize agent config watcher.
 
         Args:
             agent_id: Agent ID to monitor.
-            workspace_dir: Path to agent's workspace directory.
+            config_path: Path to the effective agent.json for this workspace.
             workspace: Owning ``Workspace`` instance. The manager is
                 resolved lazily from it, since ``set_manager`` runs
                 after ``Workspace.start()``.
+            user_id: Authenticated user id for per-user config loading.
             poll_interval: How often to check for changes (seconds).
         """
         self._agent_id = agent_id
-        self._workspace_dir = workspace_dir
-        self._config_path = workspace_dir / "agent.json"
+        self._config_path = config_path
         self._workspace = workspace
+        self._user_id = user_id
         self._poll_interval = poll_interval
         self._task: Optional[asyncio.Task] = None
 
@@ -120,7 +122,10 @@ class AgentConfigWatcher:
         """Record current mtime and section hashes as the new baseline."""
         self._last_mtime = self._read_mtime()
         try:
-            agent_config = load_agent_config(self._agent_id)
+            agent_config = load_agent_config(
+                self._agent_id,
+                user_id=self._user_id,
+            )
         except Exception:
             logger.exception(
                 f"AgentConfigWatcher ({self._agent_id}): "
@@ -161,7 +166,10 @@ class AgentConfigWatcher:
         self._last_mtime = mtime
 
         try:
-            agent_config = load_agent_config(self._agent_id)
+            agent_config = load_agent_config(
+                self._agent_id,
+                user_id=self._user_id,
+            )
         except Exception:
             logger.exception(
                 f"AgentConfigWatcher ({self._agent_id}): "
@@ -210,7 +218,10 @@ class AgentConfigWatcher:
             f"heartbeat: {old_heartbeat_hash} -> {new_heartbeat_hash})",
         )
         try:
-            await manager.reload_agent(self._agent_id)
+            await manager.reload_agent(
+                self._agent_id,
+                user_id=self._user_id,
+            )
         except Exception:
             logger.exception(
                 f"AgentConfigWatcher ({self._agent_id}): "

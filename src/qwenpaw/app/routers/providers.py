@@ -175,7 +175,7 @@ async def _load_agent_model(
 ) -> ModelSlotConfig | None:
     """Load the model configured for a specific agent."""
     workspace = await get_agent_for_request(request, agent_id=agent_id)
-    agent_config = load_agent_config(workspace.agent_id)
+    agent_config = load_agent_config(workspace.agent_id, user_id=workspace.user_id)
     return agent_config.active_model
 
 
@@ -682,12 +682,12 @@ async def set_active_model(
             request,
             agent_id=body.agent_id,
         )
-        agent_config = load_agent_config(workspace.agent_id)
+        agent_config = load_agent_config(workspace.agent_id, user_id=workspace.user_id)
         agent_config.active_model = ModelSlotConfig(
             provider_id=body.provider_id,
             model=body.model,
         )
-        save_agent_config(workspace.agent_id, agent_config)
+        save_agent_config(workspace.agent_id, agent_config, user_id=workspace.user_id)
         # Hot reload agent (async, non-blocking)
         schedule_agent_reload(request, workspace.agent_id)
 

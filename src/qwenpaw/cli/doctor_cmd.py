@@ -16,7 +16,7 @@ import click
 import httpx
 
 from ..__version__ import __version__
-from ..app.auth import has_registered_users, is_auth_enabled
+from ..app.auth import has_registered_users
 from ..config import load_config
 from ..config.utils import strict_validate_config_file
 from ..constant import PROJECT_NAME, WORKING_DIR
@@ -209,8 +209,6 @@ def _check_console_static_files() -> tuple[bool, str]:
 
 
 def _check_web_auth(base: str) -> tuple[bool, str]:
-    if not is_auth_enabled():
-        return True, "disabled (default) — open the console without logging in"
     if not has_registered_users():
         return (
             False,

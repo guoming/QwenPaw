@@ -36,7 +36,9 @@ from ..utils.logging import (
     LOG_FILE_PATH,
 )
 from ..utils.system_info import summarize_python_environment
+from .admin_middleware import AdminWriteMiddleware
 from .auth import AuthMiddleware, auto_register_from_env
+from .user_migration import migrate_legacy_to_admin_user
 from .routers import router as api_router, create_agent_scoped_router
 from .routers.agent_scoped import AgentContextMiddleware
 from .routers.approval import router as approval_router
@@ -267,6 +269,7 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
     ensure_default_agent_exists()
     migrate_legacy_skills_to_skill_pool()
     ensure_qa_agent_exists()
+    migrate_legacy_to_admin_user()
 
     # Create core managers (instant — no I/O)
     logger.debug("Initializing MultiAgentManager...")
@@ -562,9 +565,10 @@ app = FastAPI(
     default_response_class=ORJSONResponse,
 )
 
-# Add agent context middleware for agent-scoped routes
+# Add agent context middleware for agent-scoped routes.
+# Auth must run before AdminWriteMiddleware (last added = outermost on request).
 app.add_middleware(AgentContextMiddleware)
-
+app.add_middleware(AdminWriteMiddleware)
 app.add_middleware(AuthMiddleware)
 
 # Apply CORS middleware if CORS_ORIGINS is set

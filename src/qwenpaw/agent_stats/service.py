@@ -180,16 +180,11 @@ def _process_session_file(
 class AgentStatsService:
     """Service for computing agent statistics."""
 
-    # pylint: disable=R0912,R0915
-    async def get_summary(
+    def _init_daily_stats(
         self,
-        workspace_dir: Path,
         start_date: date,
         end_date: date,
-    ) -> AgentStatsSummary:
-        chats_file = workspace_dir / "chats.json"
-        sessions_dir = workspace_dir / "sessions"
-
+    ) -> dict[str, dict]:
         daily_stats: dict[str, dict] = {}
         days = (end_date - start_date).days + 1
         for i in range(days):
@@ -206,14 +201,24 @@ class AgentStatsService:
                 "llm_calls": 0,
                 "tool_calls": 0,
             }
+        return daily_stats
 
-        start_date_str = start_date.isoformat()
-        end_date_str = end_date.isoformat()
-
-        channel_stats: dict[str, dict] = {}
-        total_tool_calls = 0
-        active_sessions: dict[str, set[str]] = {}
-        total_active_sessions = 0
+    # pylint: disable=R0912,R0915,too-many-locals
+    async def _accumulate_from_workspace(
+        self,
+        workspace_dir: Path,
+        start_date: date,
+        end_date: date,
+        start_date_str: str,
+        end_date_str: str,
+        daily_stats: dict[str, dict],
+        channel_stats: dict[str, dict],
+        active_sessions: dict[str, set[str]],
+    ) -> int:
+        """Merge chats/sessions from one workspace into shared accumulators."""
+        tool_calls_added = 0
+        chats_file = workspace_dir / "chats.json"
+        sessions_dir = workspace_dir / "sessions"
 
         if chats_file.exists():
             try:
@@ -227,97 +232,143 @@ class AgentStatsService:
                         date_str = chat_date.isoformat()
                         daily_stats[date_str]["chats"] += 1
             except Exception as e:
-                logger.warning("Failed to load chat statistics: %s", e)
+                logger.warning(
+                    "Failed to load chat statistics from %s: %s",
+                    chats_file,
+                    e,
+                )
+
+        if not sessions_dir.exists():
+            return tool_calls_added
 
         # pylint: disable=too-many-nested-blocks
-        if sessions_dir.exists():
-            try:
-                session_files = []
+        try:
+            session_files = []
 
-                # Scan root sessions directory for legacy files
-                channel_names = await aiofiles.os.listdir(sessions_dir)
-                for channel_name in channel_names:
-                    channel_path = sessions_dir / channel_name
-                    if await aiofiles.os.path.isdir(channel_path):
-                        try:
-                            channel_files = await aiofiles.os.listdir(
-                                channel_path,
-                            )
-                            for channel_file in channel_files:
-                                session_file = channel_path / channel_file
-                                if session_file.name.endswith(".json"):
-                                    session_files.append(session_file)
-                        except Exception as e:
-                            logger.debug(
-                                "Failed to scan channel directory %s: %s",
-                                channel_path,
-                                e,
-                            )
-
-                session_fd_sem = asyncio.Semaphore((os.cpu_count() or 4) * 2)
-
-                async def _process_one(session_file: Path) -> tuple[int, bool]:
-                    async with session_fd_sem:
-                        if _should_skip_by_mtime(
-                            session_file,
-                            start_date,
-                            end_date,
-                        ):
-                            return 0, False
-
-                        try:
-                            async with aiofiles.open(
-                                session_file,
-                                "r",
-                                encoding="utf-8",
-                            ) as f:
-                                session_data = orjson.loads(await f.read())
-                        except Exception as e:
-                            logger.debug(
-                                "Failed to read session file %s: %s",
-                                session_file,
-                                e,
-                            )
-                            return 0, False
-
-                        if _should_skip_by_content_range(
-                            session_data,
-                            start_date_str,
-                            end_date_str,
-                        ):
-                            return 0, False
-
-                        stem = session_file.stem
-                        # Check if session is in a channel subdirectory
-                        channel = session_file.parent.name
-
-                        return _process_session_file(
-                            session_data,
-                            start_date_str,
-                            end_date_str,
-                            daily_stats,
-                            channel_stats,
-                            channel,
-                            stem,
-                            active_sessions,
+            channel_names = await aiofiles.os.listdir(sessions_dir)
+            for channel_name in channel_names:
+                channel_path = sessions_dir / channel_name
+                if await aiofiles.os.path.isdir(channel_path):
+                    try:
+                        channel_files = await aiofiles.os.listdir(
+                            channel_path,
+                        )
+                        for channel_file in channel_files:
+                            session_file = channel_path / channel_file
+                            if session_file.name.endswith(".json"):
+                                session_files.append(session_file)
+                    except Exception as e:
+                        logger.debug(
+                            "Failed to scan channel directory %s: %s",
+                            channel_path,
+                            e,
                         )
 
-                tasks = [_process_one(sf) for sf in session_files]
-                results = await asyncio.gather(*tasks, return_exceptions=True)
-                for result in results:
-                    if isinstance(result, tuple) and len(result) == 2:
-                        tool_calls, has_messages = result
-                        total_tool_calls += tool_calls
-                        if has_messages:
-                            total_active_sessions += 1
-                    elif isinstance(result, Exception):
-                        logger.debug("Failed to process session: %s", result)
-            except Exception as e:
-                logger.warning("Failed to load message statistics: %s", e)
+            session_fd_sem = asyncio.Semaphore((os.cpu_count() or 4) * 2)
+
+            async def _process_one(session_file: Path) -> tuple[int, bool]:
+                async with session_fd_sem:
+                    if _should_skip_by_mtime(
+                        session_file,
+                        start_date,
+                        end_date,
+                    ):
+                        return 0, False
+
+                    try:
+                        async with aiofiles.open(
+                            session_file,
+                            "r",
+                            encoding="utf-8",
+                        ) as f:
+                            session_data = orjson.loads(await f.read())
+                    except Exception as e:
+                        logger.debug(
+                            "Failed to read session file %s: %s",
+                            session_file,
+                            e,
+                        )
+                        return 0, False
+
+                    if _should_skip_by_content_range(
+                        session_data,
+                        start_date_str,
+                        end_date_str,
+                    ):
+                        return 0, False
+
+                    session_key = str(
+                        session_file.relative_to(workspace_dir),
+                    )
+                    channel = session_file.parent.name
+
+                    return _process_session_file(
+                        session_data,
+                        start_date_str,
+                        end_date_str,
+                        daily_stats,
+                        channel_stats,
+                        channel,
+                        session_key,
+                        active_sessions,
+                    )
+
+            tasks = [_process_one(sf) for sf in session_files]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            for result in results:
+                if isinstance(result, tuple) and len(result) == 2:
+                    tool_calls, _has_messages = result
+                    tool_calls_added += tool_calls
+                elif isinstance(result, Exception):
+                    logger.debug("Failed to process session: %s", result)
+        except Exception as e:
+            logger.warning(
+                "Failed to load message statistics from %s: %s",
+                sessions_dir,
+                e,
+            )
+
+        return tool_calls_added
+
+    # pylint: disable=R0912,R0915
+    async def get_summary(
+        self,
+        workspace_dirs: list[Path],
+        start_date: date,
+        end_date: date,
+        user_id: str | None = None,
+        aggregate_all_tokens: bool = False,
+    ) -> AgentStatsSummary:
+        daily_stats = self._init_daily_stats(start_date, end_date)
+        start_date_str = start_date.isoformat()
+        end_date_str = end_date.isoformat()
+
+        channel_stats: dict[str, dict] = {}
+        active_sessions: dict[str, set[str]] = {}
+        total_tool_calls = 0
+
+        for workspace_dir in workspace_dirs:
+            total_tool_calls += await self._accumulate_from_workspace(
+                workspace_dir,
+                start_date,
+                end_date,
+                start_date_str,
+                end_date_str,
+                daily_stats,
+                channel_stats,
+                active_sessions,
+            )
+
+        all_session_keys: set[str] = set()
+        for session_set in active_sessions.values():
+            all_session_keys.update(session_set)
+        total_active_sessions = len(all_session_keys)
 
         token_summary = await get_token_usage_manager().get_summary(
             start_date=start_date,
             end_date=end_date,
+            user_id=None if aggregate_all_tokens else user_id,
+            aggregate_all=aggregate_all_tokens,
         )
         for date_str, ts in token_summary.by_date.items():
             if date_str in daily_stats:

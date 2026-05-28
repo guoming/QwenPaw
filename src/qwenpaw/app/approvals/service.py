@@ -53,6 +53,7 @@ class PendingApproval:
     result_summary: str = ""
     findings_count: int = 0
     severity: str = "medium"  # For frontend display
+    auth_user_id: str = ""
     extra: dict[str, Any] = field(default_factory=dict)
 
 
@@ -94,6 +95,7 @@ class ApprovalService:
         result: "ToolGuardResult",
         timeout_seconds: float = TOOL_GUARD_APPROVAL_TIMEOUT_SECONDS,
         extra: dict[str, Any] | None = None,
+        auth_user_id: str = "",
     ) -> PendingApproval:
         """Create a pending approval record and return it."""
         from ...security.tool_guard.approval import format_findings_summary
@@ -107,6 +109,7 @@ class ApprovalService:
             root_session_id=root_session_id,
             owner_agent_id=owner_agent_id,
             user_id=user_id,
+            auth_user_id=auth_user_id,
             channel=channel,
             agent_id=agent_id,
             tool_name=tool_name,

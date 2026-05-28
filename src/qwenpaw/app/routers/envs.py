@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from typing import Dict, List
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
+
+from ..deps import require_admin
 from pydantic import BaseModel, Field
 
 from ...envs import load_envs, save_envs, delete_env_var
@@ -48,9 +50,11 @@ async def list_envs() -> List[EnvVar]:
     "the provided dict. Keys not present are removed.",
 )
 async def batch_save_envs(
+    request: Request,
     body: Dict[str, str],
 ) -> List[EnvVar]:
     """Batch save – full replacement of all env vars."""
+    require_admin(request)
     # Validate keys
     for key in body:
         if not key.strip():
@@ -68,8 +72,9 @@ async def batch_save_envs(
     response_model=List[EnvVar],
     summary="Delete an environment variable",
 )
-async def delete_env(key: str) -> List[EnvVar]:
+async def delete_env(request: Request, key: str) -> List[EnvVar]:
     """Delete a single env var."""
+    require_admin(request)
     envs = load_envs()
     if key not in envs:
         raise HTTPException(

@@ -7,6 +7,8 @@ import {
   Form,
   Tooltip,
   Badge,
+  Tag,
+  Dropdown,
   type MenuProps,
 } from "antd";
 import { useState, useEffect } from "react";
@@ -32,7 +34,6 @@ import {
   SparkDataLine,
   SparkMicLine,
   SparkAgentLine,
-  SparkExitFullscreenLine,
   SparkSearchUserLine,
   SparkMenuExpandLine,
   SparkMenuFoldLine,
@@ -43,8 +44,15 @@ import {
   SparkEmailLine,
   SparkCardLine,
 } from "@agentscope-ai/icons";
-import { Package } from "lucide-react";
-import { clearAuthToken } from "../api/config";
+import { ChevronRight, Package } from "lucide-react";
+import {
+  clearAuthToken,
+  getApiToken,
+  getIsAdmin,
+  getUserId,
+  getUsername,
+  setAuthSession,
+} from "../api/config";
 import { authApi } from "../api/modules/auth";
 import api from "../api";
 import { usePlugins } from "../plugins/PluginContext";
@@ -67,6 +75,27 @@ function isMobileSidebarViewport() {
 }
 const INBOX_BADGE_POLLING_MS = 6000;
 
+type SessionUser = {
+  username: string;
+  userId: string;
+  isAdmin: boolean;
+};
+
+function shortenUserId(userId: string): string {
+  if (!userId) {
+    return "—";
+  }
+  if (userId.length <= 14) {
+    return userId;
+  }
+  return `${userId.slice(0, 8)}…${userId.slice(-4)}`;
+}
+
+function userInitial(username: string): string {
+  const ch = username.trim().charAt(0);
+  return ch ? ch.toUpperCase() : "?";
+}
+
 // ── Types ─────────────────────────────────────────────────────────────────
 
 interface SidebarProps {
@@ -85,7 +114,7 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
   // (FileTree + Editor + Chat panel) rather than the bare Chat page.
   const { codingMode } = useCodingMode();
   const chatPath = codingMode ? "/coding" : "/chat";
-  const [authEnabled, setAuthEnabled] = useState(false);
+  const [sessionUser, setSessionUser] = useState<SessionUser | null>(null);
   const [accountModalOpen, setAccountModalOpen] = useState(false);
   const [accountLoading, setAccountLoading] = useState(false);
   const [accountForm] = Form.useForm();
@@ -94,13 +123,6 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
   const [hasInboxUnread, setHasInboxUnread] = useState(false);
 
   // ── Effects ──────────────────────────────────────────────────────────────
-
-  useEffect(() => {
-    authApi
-      .getStatus()
-      .then((res) => setAuthEnabled(res.enabled))
-      .catch(() => {});
-  }, []);
 
   useEffect(() => {
     if (
@@ -125,6 +147,42 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
       mediaQuery.removeEventListener("change", syncMobileSidebar);
     };
   }, []);
+  useEffect(() => {
+    const token = getApiToken();
+    if (!token) {
+      setSessionUser(null);
+      return;
+    }
+
+    const cachedUsername = getUsername();
+    if (cachedUsername) {
+      setSessionUser({
+        username: cachedUsername,
+        userId: getUserId() || "",
+        isAdmin: getIsAdmin(),
+      });
+    }
+
+    authApi
+      .verify()
+      .then((verified) => {
+        setAuthSession(
+          token,
+          verified.username,
+          verified.user_id,
+          verified.is_admin,
+        );
+        setSessionUser({
+          username: verified.username,
+          userId: verified.user_id,
+          isAdmin: verified.is_admin,
+        });
+      })
+      .catch(() => {
+        // Keep cached profile; global 401 handler will clear session if needed.
+      });
+  }, []);
+
   useEffect(() => {
     const loadUnreadState = async () => {
       try {
@@ -155,14 +213,26 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
       <span>{t("nav.inbox")}</span>
     </Badge>
   );
+  const canManageUsers = sessionUser?.isAdmin ?? getIsAdmin();
+  const adminOnlyMenuKeys = new Set([
+    "agents",
+    "models",
+    "skill-pool",
+    "market",
+    "environments",
+    "security",
+    "user-management",
+    "backups",
+    "debug",
+    "plugin-manager",
+    "voice-transcription",
+  ]);
   // ── Handlers ──────────────────────────────────────────────────────────────
 
   const handleUpdateProfile = async (values: {
     currentPassword: string;
-    newUsername?: string;
     newPassword?: string;
   }) => {
-    const trimmedUsername = values.newUsername?.trim() || undefined;
     const trimmedPassword = values.newPassword?.trim() || undefined;
 
     if (values.newPassword && !trimmedPassword) {
@@ -170,12 +240,7 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
       return;
     }
 
-    if (values.newUsername && !trimmedUsername) {
-      message.error(t("account.usernameEmpty"));
-      return;
-    }
-
-    if (!trimmedUsername && !trimmedPassword) {
+    if (!trimmedPassword) {
       message.warning(t("account.nothingToUpdate"));
       return;
     }
@@ -184,7 +249,7 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
     try {
       await authApi.updateProfile(
         values.currentPassword,
-        trimmedUsername,
+        undefined,
         trimmedPassword,
       );
       message.success(t("account.updateSuccess"));
@@ -338,6 +403,16 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
       path: "/security",
       label: t("nav.security"),
     },
+    ...(canManageUsers
+      ? [
+          {
+            key: "user-management",
+            icon: <SparkUserGroupLine size={18} />,
+            path: "/user-management",
+            label: t("nav.userManagement"),
+          },
+        ]
+      : []),
     {
       key: "token-usage",
       icon: <SparkDataLine size={18} />,
@@ -375,7 +450,7 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
       path: route.path,
       label: route.label,
     })),
-  ];
+  ].filter((item) => canManageUsers || !adminOnlyMenuKeys.has(item.key));
 
   // ── Menu items — agent-scoped (Chat + Control + Workspace) ──────────────
 
@@ -456,67 +531,78 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
 
   // ── Menu items — global settings ──────────────────────────────────────
 
+  const settingsMenuChildren: NonNullable<MenuProps["items"]>[number][] = [
+    {
+      key: "agents",
+      label: collapsed ? null : t("nav.agents"),
+      icon: <SparkAgentLine size={16} />,
+    },
+    {
+      key: "models",
+      label: collapsed ? null : t("nav.models"),
+      icon: <SparkModePlazaLine size={16} />,
+    },
+    {
+      key: "skill-pool",
+      label: collapsed ? null : t("nav.skillPool", "Skill Pool"),
+      icon: <SparkOtherLine size={16} />,
+    },
+    {
+      key: "market",
+      label: collapsed ? null : t("nav.market", "Skill Market"),
+      icon: <SparkCardLine size={16} />,
+    },
+    {
+      key: "environments",
+      label: collapsed ? null : t("nav.environments"),
+      icon: <SparkInternetLine size={16} />,
+    },
+    {
+      key: "security",
+      label: collapsed ? null : t("nav.security"),
+      icon: <SparkBrowseLine size={16} />,
+    },
+    ...(canManageUsers
+      ? [
+          {
+            key: "user-management",
+            label: collapsed ? null : t("nav.userManagement"),
+            icon: <SparkUserGroupLine size={16} />,
+          },
+        ]
+      : []),
+    {
+      key: "token-usage",
+      label: collapsed ? null : t("nav.tokenUsage"),
+      icon: <SparkDataLine size={16} />,
+    },
+    {
+      key: "backups",
+      label: collapsed ? null : t("nav.backups"),
+      icon: <SparkSaveLine size={16} />,
+    },
+    {
+      key: "voice-transcription",
+      label: collapsed ? null : t("nav.voiceTranscription"),
+      icon: <SparkMicLine size={16} />,
+    },
+    {
+      key: "debug",
+      label: collapsed ? null : t("nav.debug", "Debug"),
+      icon: <SparkDebugLine size={16} />,
+    },
+    {
+      key: "plugin-manager",
+      label: collapsed ? null : t("nav.pluginManager", "Plugin Manager"),
+      icon: <Package size={16} />,
+    },
+  ].filter((item) => canManageUsers || !adminOnlyMenuKeys.has(String(item?.key)));
+
   const settingsMenuItems: MenuProps["items"] = [
     {
       key: "settings-group",
       label: collapsed ? null : t("nav.settings"),
-      children: [
-        {
-          key: "agents",
-          label: collapsed ? null : t("nav.agents"),
-          icon: <SparkAgentLine size={16} />,
-        },
-        {
-          key: "models",
-          label: collapsed ? null : t("nav.models"),
-          icon: <SparkModePlazaLine size={16} />,
-        },
-        {
-          key: "skill-pool",
-          label: collapsed ? null : t("nav.skillPool", "Skill Pool"),
-          icon: <SparkOtherLine size={16} />,
-        },
-        {
-          key: "market",
-          label: collapsed ? null : t("nav.market", "Skill Market"),
-          icon: <SparkCardLine size={16} />,
-        },
-        {
-          key: "environments",
-          label: collapsed ? null : t("nav.environments"),
-          icon: <SparkInternetLine size={16} />,
-        },
-        {
-          key: "security",
-          label: collapsed ? null : t("nav.security"),
-          icon: <SparkBrowseLine size={16} />,
-        },
-        {
-          key: "token-usage",
-          label: collapsed ? null : t("nav.tokenUsage"),
-          icon: <SparkDataLine size={16} />,
-        },
-        {
-          key: "backups",
-          label: collapsed ? null : t("nav.backups"),
-          icon: <SparkSaveLine size={16} />,
-        },
-        {
-          key: "voice-transcription",
-          label: collapsed ? null : t("nav.voiceTranscription"),
-          icon: <SparkMicLine size={16} />,
-        },
-        {
-          key: "debug",
-          label: collapsed ? null : t("nav.debug", "Debug"),
-          icon: <SparkDebugLine size={16} />,
-        },
-        {
-          key: "plugin-manager",
-          label: collapsed ? null : t("nav.pluginManager", "Plugin Manager"),
-          icon: <Package size={16} />,
-        },
-      ],
+      children: settingsMenuChildren,
     },
   ];
 
@@ -537,6 +623,132 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
 
   const siderWidth = collapsed ? (isMobile ? 56 : 72) : 240;
 
+  const openAccountModal = () => {
+    accountForm.resetFields();
+    setAccountModalOpen(true);
+  };
+
+  const handleLogout = () => {
+    clearAuthToken();
+    window.location.href = "/login";
+  };
+
+  const renderUserPanel = () => {
+    if (!sessionUser) {
+      return null;
+    }
+
+    const initial = userInitial(sessionUser.username);
+    const panelClass = collapsed
+      ? styles.userPanelCollapsed
+      : styles.userPanel;
+
+    const trigger = collapsed ? (
+      <button
+        type="button"
+        className={`${styles.userAvatar} ${styles.userAvatarCollapsed}`}
+        aria-label={sessionUser.username}
+      >
+        {initial}
+      </button>
+    ) : (
+      <button type="button" className={styles.userTrigger}>
+        <span className={styles.userAvatar} aria-hidden>
+          {initial}
+        </span>
+        <span className={styles.userTriggerMeta}>
+          <span className={styles.userNameRow}>
+            <span
+              className={styles.userDisplayName}
+              title={sessionUser.username}
+            >
+              {sessionUser.username}
+            </span>
+            {sessionUser.isAdmin && (
+              <Tag className={styles.userAdminTag} color="orange">
+                {t("sidebarUser.admin")}
+              </Tag>
+            )}
+          </span>
+        </span>
+        <ChevronRight
+          size={16}
+          strokeWidth={2}
+          className={styles.userTriggerChevron}
+          aria-hidden
+        />
+      </button>
+    );
+
+    return (
+      <div className={panelClass}>
+        <Dropdown
+          placement={collapsed ? "topRight" : "top"}
+          trigger={["click"]}
+          overlayClassName={styles.userDropdownOverlay}
+          dropdownRender={() => (
+            <div className={styles.userDropdownPanel}>
+              <div className={styles.userDropdownHeader}>
+                <div className={styles.userDropdownTitleRow}>
+                  <span
+                    className={styles.userDropdownTitle}
+                    title={sessionUser.username}
+                  >
+                    {sessionUser.username}
+                  </span>
+                  {sessionUser.isAdmin && (
+                    <Tag className={styles.userAdminTag} color="orange">
+                      {t("sidebarUser.admin")}
+                    </Tag>
+                  )}
+                </div>
+                <div
+                  className={styles.userSubLine}
+                  title={sessionUser.userId || undefined}
+                >
+                  {t("sidebarUser.userId")}:{" "}
+                  {shortenUserId(sessionUser.userId)}
+                </div>
+                <div className={styles.userStatusLine}>
+                  <span className={styles.userStatusDot} />
+                  {t("sidebarUser.loggedIn")}
+                </div>
+              </div>
+              <div className={styles.userDropdownActions}>
+                <button
+                  type="button"
+                  className={styles.userActionItem}
+                  onClick={openAccountModal}
+                >
+                  <SparkSearchUserLine size={16} />
+                  <span>{t("account.title")}</span>
+                </button>
+              </div>
+              <button
+                type="button"
+                className={styles.userLogoutBtn}
+                onClick={handleLogout}
+              >
+                {t("login.logout")}
+              </button>
+            </div>
+          )}
+        >
+          {collapsed ? (
+            <Tooltip
+              title={sessionUser.username}
+              placement="right"
+            >
+              {trigger}
+            </Tooltip>
+          ) : (
+            trigger
+          )}
+        </Dropdown>
+      </div>
+    );
+  };
+
   return (
     <Sider
       width={siderWidth}
@@ -544,130 +756,105 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
         collapsed ? ` ${styles.siderCollapsed}` : ""
       }${isDark ? ` ${styles.siderDark}` : ""}`}
     >
-      {collapsed ? (
-        <nav className={styles.collapsedNav}>
-          {collapsedNavItems.map((item) => {
-            const isActive = selectedKey === item.key;
-            return (
-              <Tooltip
-                key={item.key}
-                title={item.label}
-                placement="right"
-                overlayInnerStyle={{
-                  background: "rgba(0,0,0,0.75)",
-                  color: "#fff",
-                }}
-              >
-                <button
-                  className={`${styles.collapsedNavItem} ${
-                    isActive ? styles.collapsedNavItemActive : ""
-                  }`}
-                  onClick={() => navigate(item.path)}
+      <div className={styles.siderInner}>
+        <div className={styles.siderBody}>
+        {collapsed ? (
+          <nav className={styles.collapsedNav}>
+            {collapsedNavItems.map((item) => {
+              const isActive = selectedKey === item.key;
+              return (
+                <Tooltip
+                  key={item.key}
+                  title={item.label}
+                  placement="right"
+                  overlayInnerStyle={{
+                    background: "rgba(0,0,0,0.75)",
+                    color: "#fff",
+                  }}
                 >
-                  {item.icon}
+                  <button
+                    className={`${styles.collapsedNavItem} ${
+                      isActive ? styles.collapsedNavItemActive : ""
+                    }`}
+                    onClick={() => navigate(item.path)}
+                  >
+                    {item.icon}
+                  </button>
+                </Tooltip>
+              );
+            })}
+          </nav>
+        ) : (
+          <>
+            {/* Agent-scoped section: selector + Chat + Control + Workspace */}
+            <div className={styles.agentScopedSection}>
+              <div className={styles.agentSelectorContainer}>
+                <AgentSelector collapsed={collapsed} />
+                {/* Chat entry — sticky together with agent selector */}
+                <button
+                  className={`${styles.stickyChatButton}${
+                    selectedKey === "chat"
+                      ? ` ${styles.stickyChatButtonActive}`
+                      : ""
+                  }`}
+                  onClick={() => navigate(chatPath)}
+                >
+                  <SparkChatTabFill size={16} />
+                  <span>{t("nav.chat")}</span>
                 </button>
-              </Tooltip>
-            );
-          })}
-        </nav>
-      ) : (
-        <>
-          {/* Agent-scoped section: selector + Chat + Control + Workspace */}
-          <div className={styles.agentScopedSection}>
-            <div className={styles.agentSelectorContainer}>
-              <AgentSelector collapsed={collapsed} />
-              {/* Chat entry — sticky together with agent selector */}
-              <button
-                className={`${styles.stickyChatButton}${
-                  selectedKey === "chat"
-                    ? ` ${styles.stickyChatButtonActive}`
-                    : ""
-                }`}
-                onClick={() => navigate(chatPath)}
-              >
-                <SparkChatTabFill size={16} />
-                <span>{t("nav.chat")}</span>
-              </button>
+              </div>
+              <Menu
+                mode="inline"
+                selectedKeys={[selectedKey]}
+                openKeys={DEFAULT_OPEN_KEYS}
+                onClick={({ key }) => {
+                  const path = KEY_TO_PATH[String(key)];
+                  if (path) navigate(path);
+                }}
+                items={agentMenuItems}
+                theme={isDark ? "dark" : "light"}
+                className={styles.sideMenu}
+              />
             </div>
+
+            {/* Global settings section */}
             <Menu
               mode="inline"
               selectedKeys={[selectedKey]}
-              openKeys={DEFAULT_OPEN_KEYS}
+              openKeys={[
+                ...DEFAULT_OPEN_KEYS,
+                ...(pluginRoutes.length > 0 ? ["plugins-group"] : []),
+              ]}
               onClick={({ key }) => {
-                const path = KEY_TO_PATH[String(key)];
-                if (path) navigate(path);
+                const path = KEY_TO_PATH[String(key)] ?? `/${String(key)}`;
+                navigate(path);
               }}
-              items={agentMenuItems}
+              items={settingsMenuItems}
               theme={isDark ? "dark" : "light"}
               className={styles.sideMenu}
             />
-          </div>
-
-          {/* Global settings section */}
-          <Menu
-            mode="inline"
-            selectedKeys={[selectedKey]}
-            openKeys={[
-              ...DEFAULT_OPEN_KEYS,
-              ...(pluginRoutes.length > 0 ? ["plugins-group"] : []),
-            ]}
-            onClick={({ key }) => {
-              const path = KEY_TO_PATH[String(key)] ?? `/${String(key)}`;
-              navigate(path);
-            }}
-            items={settingsMenuItems}
-            theme={isDark ? "dark" : "light"}
-            className={styles.sideMenu}
-          />
-        </>
-      )}
-
-      {authEnabled && !collapsed && (
-        <div className={styles.authActions}>
-          <Button
-            type="text"
-            icon={<SparkSearchUserLine size={16} />}
-            onClick={() => {
-              accountForm.resetFields();
-              setAccountModalOpen(true);
-            }}
-            block
-            className={`${styles.authBtn} ${
-              collapsed ? styles.authBtnCollapsed : ""
-            }`}
-          >
-            {!collapsed && t("account.title")}
-          </Button>
-          <Button
-            type="text"
-            icon={<SparkExitFullscreenLine size={16} />}
-            onClick={() => {
-              clearAuthToken();
-              window.location.href = "/login";
-            }}
-            block
-            className={`${styles.authBtn} ${
-              collapsed ? styles.authBtnCollapsed : ""
-            }`}
-          >
-            {!collapsed && t("login.logout")}
-          </Button>
+          </>
+        )}
         </div>
-      )}
 
-      <div className={styles.collapseToggleContainer}>
-        <Button
-          type="text"
-          icon={
-            collapsed ? (
-              <SparkMenuExpandLine size={20} />
-            ) : (
-              <SparkMenuFoldLine size={20} />
-            )
-          }
-          onClick={() => setCollapsed(!collapsed)}
-          className={styles.collapseToggle}
-        />
+        <div className={styles.siderFooter}>
+          {renderUserPanel()}
+
+          <div className={styles.collapseToggleContainer}>
+            <Button
+              type="text"
+              icon={
+                collapsed ? (
+                  <SparkMenuExpandLine size={20} />
+                ) : (
+                  <SparkMenuFoldLine size={20} />
+                )
+              }
+              onClick={() => setCollapsed(!collapsed)}
+              className={styles.collapseToggle}
+            />
+          </div>
+        </div>
       </div>
 
       <Modal
@@ -691,9 +878,6 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
             ]}
           >
             <Input.Password />
-          </Form.Item>
-          <Form.Item name="newUsername" label={t("account.newUsername")}>
-            <Input placeholder={t("account.newUsernamePlaceholder")} />
           </Form.Item>
           <Form.Item name="newPassword" label={t("account.newPassword")}>
             <Input.Password placeholder={t("account.newPasswordPlaceholder")} />

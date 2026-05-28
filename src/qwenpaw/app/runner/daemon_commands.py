@@ -61,6 +61,7 @@ class DaemonContext:
     # Session ID for approval commands.
     session_id: str = ""
     agent_name: str = "QwenPaw"
+    auth_user_id: Optional[str] = None
 
 
 def _get_last_lines(
@@ -116,7 +117,10 @@ def run_daemon_status(context: DaemonContext) -> str:
                     load_agent_config,
                 )
 
-                agent_cfg = load_agent_config(agent_id)
+                agent_cfg = load_agent_config(
+                    agent_id,
+                    user_id=context.auth_user_id,
+                )
                 max_in = get_model_max_input_length(agent_cfg)
             except Exception:
                 pass

@@ -19,6 +19,28 @@ from .utils import agentscope_msg_to_message
 router = APIRouter(prefix="/chats", tags=["chats"])
 
 
+def _resolve_auth_chat_user_ids(request: Request) -> set[str] | None:
+    """Resolve authenticated user ids that may own chats in this request."""
+    try:
+        from ..deps import get_request_user_id
+
+        auth_user_id = get_request_user_id(request)
+        return {auth_user_id, f"console:{auth_user_id}"}
+    except HTTPException:
+        return None
+
+
+def _can_access_chat(
+    *,
+    chat_user_id: str,
+    auth_chat_user_ids: set[str] | None,
+) -> bool:
+    """Allow access only to chats owned by current authenticated user."""
+    if auth_chat_user_ids is None:
+        return True
+    return chat_user_id in auth_chat_user_ids
+
+
 async def get_workspace(request: Request):
     """Get the workspace for the active agent."""
     from ..agent_context import get_agent_for_request
@@ -64,6 +86,7 @@ async def get_session(
 
 @router.get("", response_model=list[ChatSpec])
 async def list_chats(
+    request: Request,
     user_id: Optional[str] = Query(None, description="Filter by user ID"),
     channel: Optional[str] = Query(None, description="Filter by channel"),
     mgr: ChatManager = Depends(get_chat_manager),
@@ -77,6 +100,15 @@ async def list_chats(
         mgr: Chat manager dependency
     """
     chats = await mgr.list_chats(user_id=user_id, channel=channel)
+    auth_chat_user_ids = _resolve_auth_chat_user_ids(request)
+    chats = [
+        spec
+        for spec in chats
+        if _can_access_chat(
+            chat_user_id=spec.user_id,
+            auth_chat_user_ids=auth_chat_user_ids,
+        )
+    ]
     tracker = workspace.task_tracker
     result = []
     for spec in chats:
@@ -87,6 +119,7 @@ async def list_chats(
 
 @router.post("", response_model=ChatSpec)
 async def create_chat(
+    raw_request: Request,
     request: ChatSpec,
     mgr: ChatManager = Depends(get_chat_manager),
 ):
@@ -101,6 +134,13 @@ async def create_chat(
     Returns:
         Created chat spec with UUID
     """
+    auth_chat_user_ids = _resolve_auth_chat_user_ids(raw_request)
+    if not _can_access_chat(
+        chat_user_id=request.user_id,
+        auth_chat_user_ids=auth_chat_user_ids,
+    ):
+        raise HTTPException(status_code=403, detail="Forbidden chat owner")
+
     chat_id = str(uuid4())
     spec = ChatSpec(
         id=chat_id,
@@ -115,6 +155,7 @@ async def create_chat(
 
 @router.post("/batch-delete", response_model=dict)
 async def batch_delete_chats(
+    request: Request,
     chat_ids: list[str],
     mgr: ChatManager = Depends(get_chat_manager),
 ):
@@ -127,12 +168,24 @@ async def batch_delete_chats(
         True if deleted, False if failed
 
     """
-    deleted = await mgr.delete_chats(chat_ids=chat_ids)
+    auth_chat_user_ids = _resolve_auth_chat_user_ids(request)
+    allowed_chat_ids: list[str] = []
+    for chat_id in chat_ids:
+        chat_spec = await mgr.get_chat(chat_id)
+        if chat_spec is None:
+            continue
+        if _can_access_chat(
+            chat_user_id=chat_spec.user_id,
+            auth_chat_user_ids=auth_chat_user_ids,
+        ):
+            allowed_chat_ids.append(chat_id)
+    deleted = await mgr.delete_chats(chat_ids=allowed_chat_ids)
     return {"deleted": deleted}
 
 
 @router.get("/{chat_id}", response_model=ChatHistory)
 async def get_chat(
+    request: Request,
     chat_id: str,
     mgr: ChatManager = Depends(get_chat_manager),
     session: SafeJSONSession = Depends(get_session),
@@ -158,6 +211,12 @@ async def get_chat(
             status_code=404,
             detail=f"Chat not found: {chat_id}",
         )
+    auth_chat_user_ids = _resolve_auth_chat_user_ids(request)
+    if not _can_access_chat(
+        chat_user_id=chat_spec.user_id,
+        auth_chat_user_ids=auth_chat_user_ids,
+    ):
+        raise HTTPException(status_code=404, detail=f"Chat not found: {chat_id}")
 
     state = await session.get_session_state_dict(
         chat_spec.session_id,
@@ -178,6 +237,7 @@ async def get_chat(
 
 @router.put("/{chat_id}", response_model=ChatSpec)
 async def update_chat(
+    request: Request,
     chat_id: str,
     spec: ChatUpdate,
     mgr: ChatManager = Depends(get_chat_manager),
@@ -195,6 +255,19 @@ async def update_chat(
     Raises:
         HTTPException: If chat not found (404)
     """
+    current = await mgr.get_chat(chat_id)
+    if current is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Chat not found: {chat_id}",
+        )
+    auth_chat_user_ids = _resolve_auth_chat_user_ids(request)
+    if not _can_access_chat(
+        chat_user_id=current.user_id,
+        auth_chat_user_ids=auth_chat_user_ids,
+    ):
+        raise HTTPException(status_code=404, detail=f"Chat not found: {chat_id}")
+
     updated = await mgr.patch_chat(chat_id, spec)
     if updated is None:
         raise HTTPException(
@@ -206,6 +279,7 @@ async def update_chat(
 
 @router.delete("/{chat_id}", response_model=dict)
 async def delete_chat(
+    request: Request,
     chat_id: str,
     mgr: ChatManager = Depends(get_chat_manager),
 ):
@@ -224,6 +298,19 @@ async def delete_chat(
     Raises:
         HTTPException: If chat not found (404)
     """
+    current = await mgr.get_chat(chat_id)
+    if current is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Chat not found: {chat_id}",
+        )
+    auth_chat_user_ids = _resolve_auth_chat_user_ids(request)
+    if not _can_access_chat(
+        chat_user_id=current.user_id,
+        auth_chat_user_ids=auth_chat_user_ids,
+    ):
+        raise HTTPException(status_code=404, detail=f"Chat not found: {chat_id}")
+
     deleted = await mgr.delete_chats(chat_ids=[chat_id])
     if not deleted:
         raise HTTPException(

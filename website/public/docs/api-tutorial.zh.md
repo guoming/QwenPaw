@@ -603,13 +603,13 @@ curl -X POST http://localhost:8088/api/console/chat \
   -d '{"input":[{"role":"user","content":[{"type":"text","text":"你好"}]}],"channel":"console"}'
 ```
 
-### Web 认证令牌（可选）
+### Web 认证令牌
 
-如果启用了 [Web 登录认证](./security#Web-登录认证)（`QWENPAW_AUTH_ENABLED=true`），所有 API 请求都需要提供身份验证令牌。
+在已有注册用户后，除公开路径与 `allow_no_auth_hosts` 白名单外，所有 `/api/*` 请求都需要 [Bearer 令牌](./security#Web-登录认证)。
 
 #### 注册账号
 
-**首次使用需要先注册管理员账号**（QwenPaw 采用单用户模式）：
+**首次使用需注册账号**（首个用户为管理员）：
 
 ```bash
 curl -X POST http://localhost:8088/api/auth/register \
@@ -644,7 +644,7 @@ curl -X POST http://localhost:8088/api/auth/register \
 
 **注意事项**：
 
-- 注册接口只能调用一次（单用户模式）
+- 首个注册用户为管理员；之后可继续注册普通用户
 - 注册成功后会直接返回登录令牌
 - 如果已有用户，会返回 `{"detail":"User already registered"}` 错误
 - 支持通过 `expires_in` 参数自定义令牌有效期（同登录接口）
@@ -685,7 +685,6 @@ docker exec -it <容器名> qwenpaw auth reset-password
 你也可以在启动 QwenPaw 时通过环境变量自动创建账号：
 
 ```bash
-export QWENPAW_AUTH_ENABLED=true
 export QWENPAW_AUTH_USERNAME=admin
 export QWENPAW_AUTH_PASSWORD=admin123
 qwenpaw app
@@ -860,37 +859,9 @@ curl -X POST http://localhost:8088/api/auth/update-profile \
 - 建议在令牌泄露或设备丢失时立即撤销
 - 如果使用永久令牌（`expires_in: 0`），强烈建议定期手动撤销并重新申请
 
-#### 关闭认证
+#### 本地免令牌访问
 
-如果你不想使用 Web 认证，可以关闭它：
-
-**方法 1：移除环境变量**
-
-```bash
-# Linux / macOS
-unset QWENPAW_AUTH_ENABLED
-qwenpaw app
-
-# Windows (CMD)
-set QWENPAW_AUTH_ENABLED=
-qwenpaw app
-
-# Windows (PowerShell)
-Remove-Item Env:\QWENPAW_AUTH_ENABLED
-qwenpaw app
-```
-
-**方法 2：Docker 部署**
-
-移除 `-e QWENPAW_AUTH_ENABLED=true` 参数：
-
-```bash
-docker run -p 127.0.0.1:8088:8088 \
-  -v qwenpaw-data:/app/working \
-  -v qwenpaw-secrets:/app/working.secret \
-  -v qwenpaw-backups:/app/working.backups \
-  agentscope/qwenpaw:latest
-```
+本机 CLI 联调时，可将客户端 IP 保留在 `config.json` 的 `security.allow_no_auth_hosts`（默认含 `127.0.0.1`）。**勿对公网 IP 开放此白名单。**
 
 **重要提示**：
 

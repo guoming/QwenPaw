@@ -9,6 +9,8 @@ from fastapi import APIRouter, Query, Request
 
 from ...agent_stats import AgentStatsSummary, get_agent_stats_service
 from ..agent_context import get_agent_for_request
+from ..deps import resolve_stats_scope
+from ..user_agent_registry import list_user_agent_workspace_dirs
 
 router = APIRouter(prefix="/agent-stats", tags=["agent-stats"])
 
@@ -39,6 +41,11 @@ async def get_agent_statistics(
         None,
         description="End date YYYY-MM-DD (inclusive). Default: today",
     ),
+    scope: str
+    | None = Query(
+        None,
+        description="Use scope=all (admin only) to aggregate all users",
+    ),
 ) -> AgentStatsSummary:
     end_d = _parse_date(end_date) or date.today()
     start_d = _parse_date(start_date) or (end_d - timedelta(days=30))
@@ -46,9 +53,20 @@ async def get_agent_statistics(
         start_d, end_d = end_d, start_d
 
     workspace = await get_agent_for_request(request)
+    user_id, aggregate_all = resolve_stats_scope(request, scope)
+
+    if aggregate_all:
+        workspace_dirs = list_user_agent_workspace_dirs(workspace.agent_id)
+        if not workspace_dirs:
+            workspace_dirs = [workspace.workspace_dir]
+    else:
+        workspace_dirs = [workspace.workspace_dir]
+
     service = get_agent_stats_service()
     return await service.get_summary(
-        workspace_dir=workspace.workspace_dir,
+        workspace_dirs=workspace_dirs,
         start_date=start_d,
         end_date=end_d,
+        user_id=user_id,
+        aggregate_all_tokens=aggregate_all,
     )

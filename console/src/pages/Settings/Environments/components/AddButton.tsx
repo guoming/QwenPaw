@@ -5,9 +5,10 @@ import styles from "../index.module.less";
 interface AddButtonProps {
   onClick: () => void;
   className?: string;
+  disabled?: boolean;
 }
 
-export function AddButton({ onClick, className }: AddButtonProps) {
+export function AddButton({ onClick, className, disabled }: AddButtonProps) {
   const { t } = useTranslation();
 
   return (
@@ -15,6 +16,7 @@ export function AddButton({ onClick, className }: AddButtonProps) {
       <button
         className={styles.addBtn}
         onClick={onClick}
+        disabled={disabled}
         title={t("environments.addVariable")}
       >
         <SparkPlusLine />

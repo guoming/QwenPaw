@@ -26,10 +26,12 @@ import SilentBackupModal from "./create/SilentBackupModal";
 import PreRestoreConfirmModal from "./restore/PreRestoreConfirmModal";
 import RestoreBackupModal from "./restore/RestoreBackupModal";
 import { useRestoreFlow } from "./restore/useRestoreFlow";
+import { useSettingsWriteProps } from "../../../components/SettingsPageShell";
 import styles from "./index.module.less";
 
 export default function BackupsPage() {
   const { t } = useTranslation();
+  const writeProps = useSettingsWriteProps();
   const { message } = useAppMessage();
   const [loading, setLoading] = useState(true);
   const [backups, setBackups] = useState<BackupMeta[]>([]);
@@ -83,6 +85,7 @@ export default function BackupsPage() {
               type="primary"
               icon={<PlusOutlined />}
               onClick={() => setCreateOpen(true)}
+              {...writeProps}
             >
               {t("backup.create")}
             </Button>

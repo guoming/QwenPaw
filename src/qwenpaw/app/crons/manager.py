@@ -48,11 +48,13 @@ class CronManager:
         channel_manager: Any,
         timezone: str = "UTC",  # pylint: disable=redefined-outer-name
         agent_id: Optional[str] = None,
+        auth_user_id: Optional[str] = None,
     ):
         self._repo = repo
         self._runner = runner
         self._channel_manager = channel_manager
         self._agent_id = agent_id
+        self._auth_user_id = auth_user_id
         self._scheduler = AsyncIOScheduler(timezone=timezone)
         self._executor = CronExecutor(
             runner=runner,
@@ -335,7 +337,11 @@ class CronManager:
             if session_id:
                 error_text = f"❌ Cron job [{job.name}] failed: {exc}"
                 asyncio.ensure_future(
-                    push_store_append(session_id, error_text),
+                    push_store_append(
+                        session_id,
+                        error_text,
+                        auth_user_id=self._auth_user_id,
+                    ),
                 )
 
     # ----- internal -----
@@ -476,6 +482,7 @@ class CronManager:
                 channel_manager=self._channel_manager,
                 agent_id=self._agent_id,
                 workspace_dir=workspace_dir,
+                auth_user_id=self._auth_user_id,
             )
         except asyncio.CancelledError:
             logger.info("heartbeat cancelled")
@@ -575,6 +582,7 @@ class CronManager:
                                 agent_id=self._agent_id,
                                 source_type="cron",
                                 source_id=job.id,
+                                user_id=self._auth_user_id,
                                 event_type="cron_delivery_failed_fallback",
                                 status="error",
                                 severity="error",
@@ -608,6 +616,7 @@ class CronManager:
                                 agent_id=self._agent_id,
                                 source_type="cron",
                                 source_id=job.id,
+                                user_id=self._auth_user_id,
                                 event_type="cron_result",
                                 status="success",
                                 severity="info",

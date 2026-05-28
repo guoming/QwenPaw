@@ -1,19 +1,12 @@
 # -*- coding: utf-8 -*-
 """Authentication module: password hashing, JWT tokens, and FastAPI middleware.
 
-Login is disabled by default and only enabled when the environment
-variable ``QWENPAW_AUTH_ENABLED`` is set to a truthy value (``true``,
-``1``, ``yes``).  Credentials are created through a web-based
-registration flow rather than environment variables, so that agents
-running inside the process cannot read plaintext passwords.
+Authentication is always enabled for API routes.  Credentials are
+created through a web-based registration flow.  Multiple user accounts
+are supported; the first registered user is the admin (``is_admin``).
 
-Single-user design: only one account can be registered.  If the user
-forgets their password, delete ``auth.json`` from ``SECRET_DIR`` and
-restart the service to re-register.
-
-Uses only Python stdlib (hashlib, hmac, secrets) to avoid adding new
-dependencies.  The password is stored as a salted SHA-256 hash in
-``auth.json`` under ``SECRET_DIR``.
+Uses only Python stdlib (hashlib, hmac, secrets).  Passwords are stored
+as salted SHA-256 hashes in ``auth.json`` under ``SECRET_DIR``.
 """
 from __future__ import annotations
 
@@ -23,13 +16,14 @@ import json
 import logging
 import os
 import secrets
+import shutil
 import time
 from typing import Optional
 
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from ..constant import SECRET_DIR, EnvVarLoader
+from ..constant import SECRET_DIR, USERS_DIR, EnvVarLoader
 from ..security.secret_store import (
     AUTH_SECRET_FIELDS,
     decrypt_dict_fields,
@@ -53,6 +47,7 @@ _PUBLIC_PATHS: frozenset[str] = frozenset(
         "/api/auth/login",
         "/api/auth/status",
         "/api/auth/register",
+        "/api/auth/verify",
         "/api/version",
         "/api/settings/language",
         "/api/frontend_plugin",
@@ -126,7 +121,13 @@ def _get_jwt_secret() -> str:
     return secret
 
 
-def create_token(username: str, expiry_seconds: Optional[int] = None) -> str:
+def create_token(
+    username: str,
+    expiry_seconds: Optional[int] = None,
+    *,
+    user_id: Optional[str] = None,
+    is_admin: bool = False,
+) -> str:
     """Create an HMAC-signed token: ``base64(payload).signature``.
 
     Args:
@@ -134,8 +135,16 @@ def create_token(username: str, expiry_seconds: Optional[int] = None) -> str:
         expiry_seconds: Custom expiry time in seconds.
             Use -1 or 0 for permanent tokens.
             Defaults to TOKEN_EXPIRY_SECONDS (7 days).
+        user_id: Auth user id (resolved from storage when omitted).
+        is_admin: Whether the user is an administrator.
     """
     import base64
+
+    if user_id is None:
+        record = _find_user_by_username(username)
+        if record:
+            user_id = record.get("user_id", "")
+            is_admin = bool(record.get("is_admin", False))
 
     if expiry_seconds is None:
         expiry_seconds = TOKEN_EXPIRY_SECONDS
@@ -152,6 +161,8 @@ def create_token(username: str, expiry_seconds: Optional[int] = None) -> str:
     payload = json.dumps(
         {
             "sub": username,
+            "user_id": user_id or "",
+            "is_admin": is_admin,
             "exp": int(time.time()) + expiry_seconds,
             "iat": int(time.time()),
             "jti": token_id,  # JWT ID for individual revocation
@@ -166,11 +177,8 @@ def create_token(username: str, expiry_seconds: Optional[int] = None) -> str:
     return f"{payload_b64}.{sig}"
 
 
-def verify_token(token: str) -> Optional[str]:
-    """Verify *token*, return username if valid, ``None`` otherwise.
-
-    Also checks if the token has been revoked (appears in the revocation list).
-    """
+def verify_token_payload(token: str) -> Optional[dict]:
+    """Verify *token* and return payload fields, or ``None`` if invalid."""
     import base64
 
     try:
@@ -190,15 +198,30 @@ def verify_token(token: str) -> Optional[str]:
         if payload.get("exp", 0) < time.time():
             return None
 
-        # Check if token is revoked
         jti = payload.get("jti")
         if jti and _is_token_revoked(jti):
             return None
 
-        return payload.get("sub")
+        username = payload.get("sub")
+        if not username:
+            return None
+
+        return {
+            "sub": username,
+            "user_id": payload.get("user_id", ""),
+            "is_admin": bool(payload.get("is_admin", False)),
+        }
     except (json.JSONDecodeError, KeyError, ValueError, TypeError) as exc:
         logger.debug("Token verification failed: %s", exc)
         return None
+
+
+def verify_token(token: str) -> Optional[str]:
+    """Verify *token*, return username if valid, ``None`` otherwise."""
+    payload = verify_token_payload(token)
+    if payload is None:
+        return None
+    return payload.get("sub")
 
 
 # ---------------------------------------------------------------------------
@@ -330,25 +353,132 @@ def _clean_expired_revocations() -> None:
 
 
 def is_auth_enabled() -> bool:
-    """Check whether authentication is enabled via environment variable.
+    """Authentication is always enabled."""
+    return True
 
-    Returns ``True`` when ``QWENPAW_AUTH_ENABLED`` is set to a truthy
-    value (``true``, ``1``, ``yes``).  The presence of a registered
-    user is checked separately by the middleware so that the first
-    user can still reach the registration page.
-    """
-    env_flag = EnvVarLoader.get_str("QWENPAW_AUTH_ENABLED", "").strip().lower()
-    return env_flag in ("true", "1", "yes")
+
+def _migrate_legacy_user(data: dict) -> dict:
+    """Convert legacy single-user ``user`` field to ``users`` list."""
+    if data.get("_auth_load_error"):
+        return data
+    if data.get("users") is not None:
+        return data
+    legacy = data.get("user")
+    if legacy:
+        data["users"] = [
+            {
+                "user_id": legacy.get("user_id") or f"u_{secrets.token_hex(4)}",
+                "username": legacy["username"],
+                "password_hash": legacy.get("password_hash", ""),
+                "password_salt": legacy.get("password_salt", ""),
+                "is_admin": True,
+            },
+        ]
+        data.pop("user", None)
+        try:
+            _save_auth_data(data)
+        except OSError as exc:
+            logger.warning("Failed to persist auth migration: %s", exc)
+    else:
+        data["users"] = []
+    return data
+
+
+def _get_users(data: dict) -> list:
+    """Return the users list from auth data (after migration)."""
+    data = _migrate_legacy_user(data)
+    users = data.get("users")
+    if not isinstance(users, list):
+        return []
+    return users
+
+
+def _find_user_by_username(username: str) -> Optional[dict]:
+    data = _load_auth_data()
+    for user in _get_users(data):
+        if user.get("username") == username:
+            return user
+    return None
 
 
 def has_registered_users() -> bool:
-    """Return ``True`` if a user has been registered."""
+    """Return ``True`` if at least one user has been registered."""
     data = _load_auth_data()
-    return bool(data.get("user"))
+    return len(_get_users(data)) > 0
+
+
+def list_users() -> list[dict]:
+    """Return sanitized user records for admin user management."""
+    data = _load_auth_data()
+    if data.get("_auth_load_error"):
+        return []
+    users = _get_users(data)
+    return [
+        {
+            "user_id": u.get("user_id", ""),
+            "username": u.get("username", ""),
+            "is_admin": bool(u.get("is_admin", False)),
+        }
+        for u in users
+    ]
+
+
+def reset_user_password(
+    user_id: str,
+    new_password: str,
+) -> bool:
+    """Reset password for a user by ``user_id`` (admin flow)."""
+    data = _load_auth_data()
+    if data.get("_auth_load_error"):
+        return False
+    users = _get_users(data)
+    user = next((u for u in users if u.get("user_id") == user_id), None)
+    if not user:
+        return False
+    pw_hash, salt = _hash_password(new_password)
+    user["password_hash"] = pw_hash
+    user["password_salt"] = salt
+    # Rotate secret to invalidate all sessions after admin reset.
+    data["jwt_secret"] = secrets.token_hex(32)
+    data["users"] = users
+    _save_auth_data(data)
+    return True
+
+
+def delete_user(
+    user_id: str,
+    *,
+    actor_user_id: str | None = None,
+) -> bool:
+    """Delete a non-admin user and cleanup user data directory."""
+    data = _load_auth_data()
+    if data.get("_auth_load_error"):
+        return False
+    users = _get_users(data)
+    target = next((u for u in users if u.get("user_id") == user_id), None)
+    if not target:
+        return False
+    if target.get("is_admin"):
+        return False
+    if actor_user_id and actor_user_id == user_id:
+        return False
+
+    data["users"] = [u for u in users if u.get("user_id") != user_id]
+    # Rotate secret so deleted user's existing tokens cannot continue.
+    data["jwt_secret"] = secrets.token_hex(32)
+    _save_auth_data(data)
+
+    user_root = USERS_DIR / user_id
+    if user_root.exists():
+        try:
+            shutil.rmtree(user_root)
+        except OSError as exc:
+            logger.warning("Failed to cleanup user directory %s: %s", user_root, exc)
+    return True
 
 
 # ---------------------------------------------------------------------------
-# Registration (single-user)
+# Registration (multi-user)
 # ---------------------------------------------------------------------------
 
 
@@ -357,53 +487,59 @@ def register_user(
     password: str,
     expiry_seconds: Optional[int] = None,
 ) -> Optional[str]:
-    """Register the single user account.
+    """Register a user account.
 
-    Args:
-        username: The username to register.
-        password: The password to register.
-        expiry_seconds: Custom token expiry time in seconds.
-
-    Returns a token on success, ``None`` if a user already exists.
+    The first registered user becomes admin.  Returns a token on success,
+    or ``None`` if the username is already taken.
     """
     data = _load_auth_data()
+    if data.get("_auth_load_error"):
+        return None
 
-    # Only one user allowed
-    if data.get("user"):
+    users = _get_users(data)
+    if any(u.get("username") == username for u in users):
         return None
 
     pw_hash, salt = _hash_password(password)
-    data["user"] = {
-        "username": username,
-        "password_hash": pw_hash,
-        "password_salt": salt,
-    }
+    user_id = f"u_{secrets.token_hex(4)}"
+    is_admin = len(users) == 0
+    users.append(
+        {
+            "user_id": user_id,
+            "username": username,
+            "password_hash": pw_hash,
+            "password_salt": salt,
+            "is_admin": is_admin,
+        },
+    )
+    data["users"] = users
 
-    # Ensure jwt_secret exists
     if not data.get("jwt_secret"):
         data["jwt_secret"] = secrets.token_hex(32)
 
     _save_auth_data(data)
-    logger.info("User '%s' registered", username)
-    return create_token(username, expiry_seconds)
+    logger.info("User '%s' registered (admin=%s)", username, is_admin)
+    return create_token(
+        username,
+        expiry_seconds,
+        user_id=user_id,
+        is_admin=is_admin,
+    )
 
 
 def auto_register_from_env() -> None:
     """Auto-register admin user from environment variables.
 
-    Called once during application startup.  If ``QWENPAW_AUTH_ENABLED``
-    is truthy and both ``QWENPAW_AUTH_USERNAME`` and ``QWENPAW_AUTH_PASSWORD``
-    are set, the admin account is created automatically — useful for
+    Called once during application startup.  When both
+    ``QWENPAW_AUTH_USERNAME`` and ``QWENPAW_AUTH_PASSWORD`` are set, the first
+    admin account is created automatically — useful for
     Docker, Kubernetes, server-panel, and other automated deployments
     where interactive web registration is not practical.
 
     Skips silently when:
-    - authentication is not enabled
     - a user has already been registered
     - either env var is missing or empty
     """
-    if not is_auth_enabled():
-        return
     if has_registered_users():
         return
 
@@ -421,25 +557,23 @@ def auto_register_from_env() -> None:
 
 
 def update_credentials(
+    username: str,
     current_password: str,
     new_username: Optional[str] = None,
     new_password: Optional[str] = None,
     expiry_seconds: Optional[int] = None,
 ) -> Optional[str]:
-    """Update the registered user's username and/or password.
+    """Update a user's username and/or password.
 
     Requires the current password for verification.  Returns a new
-    token on success (because the username may have changed), or
-    ``None`` if verification fails.
-
-    Args:
-        current_password: The current password for verification.
-        new_username: The new username (optional).
-        new_password: The new password (optional).
-        expiry_seconds: Custom token expiry time in seconds.
+    token on success, or ``None`` if verification fails.
     """
     data = _load_auth_data()
-    user = data.get("user")
+    if data.get("_auth_load_error"):
+        return None
+
+    users = _get_users(data)
+    user = next((u for u in users if u.get("username") == username), None)
     if not user:
         return None
 
@@ -449,19 +583,28 @@ def update_credentials(
         return None
 
     if new_username and new_username.strip():
-        user["username"] = new_username.strip()
+        new_name = new_username.strip()
+        if any(
+            u.get("username") == new_name and u is not user for u in users
+        ):
+            return None
+        user["username"] = new_name
 
     if new_password:
         pw_hash, salt = _hash_password(new_password)
         user["password_hash"] = pw_hash
         user["password_salt"] = salt
-        # Rotate JWT secret to invalidate all existing sessions
         data["jwt_secret"] = secrets.token_hex(32)
 
-    data["user"] = user
+    data["users"] = users
     _save_auth_data(data)
     logger.info("Credentials updated for user '%s'", user["username"])
-    return create_token(user["username"], expiry_seconds)
+    return create_token(
+        user["username"],
+        expiry_seconds,
+        user_id=user.get("user_id", ""),
+        is_admin=bool(user.get("is_admin", False)),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -481,11 +624,8 @@ def authenticate(
         password: The password to verify.
         expiry_seconds: Custom token expiry time in seconds.
     """
-    data = _load_auth_data()
-    user = data.get("user")
+    user = _find_user_by_username(username)
     if not user:
-        return None
-    if user.get("username") != username:
         return None
     stored_hash = user.get("password_hash", "")
     stored_salt = user.get("password_salt", "")
@@ -494,7 +634,12 @@ def authenticate(
         and stored_salt
         and verify_password(password, stored_hash, stored_salt)
     ):
-        return create_token(username, expiry_seconds)
+        return create_token(
+            username,
+            expiry_seconds,
+            user_id=user.get("user_id", ""),
+            is_admin=bool(user.get("is_admin", False)),
+        )
     return None
 
 
@@ -581,6 +726,12 @@ def _resolve_client_ip(request: Request) -> str:
 class AuthMiddleware(BaseHTTPMiddleware):
     """Middleware that checks Bearer token on protected routes."""
 
+    @staticmethod
+    def _attach_user_state(request: Request, payload: dict) -> None:
+        request.state.user = payload["sub"]
+        request.state.user_id = payload.get("user_id") or ""
+        request.state.is_admin = bool(payload.get("is_admin", False))
+
     async def dispatch(
         self,
         request: Request,
@@ -588,6 +739,13 @@ class AuthMiddleware(BaseHTTPMiddleware):
     ) -> Response:
         """Check Bearer token on protected API routes; skip public paths."""
         if self._should_skip_auth(request):
+            # Host whitelist bypasses mandatory auth, but still honour a valid
+            # Bearer token so per-user routes (chats, coding-mode, etc.) work.
+            token = self._extract_token(request)
+            if token:
+                payload = verify_token_payload(token)
+                if payload:
+                    self._attach_user_state(request, payload)
             return await call_next(request)
 
         token = self._extract_token(request)
@@ -598,8 +756,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 media_type="application/json",
             )
 
-        user = verify_token(token)
-        if user is None:
+        payload = verify_token_payload(token)
+        if payload is None:
             return Response(
                 content=json.dumps(
                     {"detail": "Invalid or expired token"},
@@ -608,13 +766,13 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 media_type="application/json",
             )
 
-        request.state.user = user
+        self._attach_user_state(request, payload)
         return await call_next(request)
 
     @staticmethod
     def _should_skip_auth(request: Request) -> bool:
         """Return ``True`` when the request does not require auth."""
-        if not is_auth_enabled() or not has_registered_users():
+        if not has_registered_users():
             return True
 
         path = request.url.path

@@ -6,6 +6,7 @@ from datetime import date, timedelta
 from agentscope.message import TextBlock
 from agentscope.tool import ToolResponse
 
+from ...config.context import get_current_user_id
 from ...token_usage import get_token_usage_manager
 
 
@@ -34,6 +35,7 @@ async def get_token_usage(
         end_date=end,
         model_name=model_name,
         provider_id=provider_id,
+        user_id=get_current_user_id(),
     )
 
     lines: list[str] = []

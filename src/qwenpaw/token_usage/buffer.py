@@ -178,6 +178,38 @@ class TokenUsageBuffer:
         logger.debug("token_usage: cache seeded from disk")
 
 
+def merge_usage_caches(caches: list[dict]) -> dict:
+    """Merge multiple usage caches (e.g. all users) by summing counters."""
+    merged: dict = {}
+    for cache in caches:
+        if not isinstance(cache, dict):
+            continue
+        for date_str, day_bucket in cache.items():
+            if not isinstance(day_bucket, dict):
+                continue
+            out_day = merged.setdefault(date_str, {})
+            for key, entry in day_bucket.items():
+                if not isinstance(entry, dict):
+                    continue
+                out_entry = out_day.setdefault(
+                    key,
+                    {
+                        "provider_id": entry.get("provider_id", ""),
+                        "model_name": entry.get("model_name") or key,
+                        "prompt_tokens": 0,
+                        "completion_tokens": 0,
+                        "call_count": 0,
+                    },
+                )
+                out_entry["prompt_tokens"] += entry.get("prompt_tokens", 0)
+                out_entry["completion_tokens"] += entry.get(
+                    "completion_tokens",
+                    0,
+                )
+                out_entry["call_count"] += entry.get("call_count", 0)
+    return merged
+
+
 def _apply_event(cache: dict, ev: _UsageEvent) -> None:
     """Accumulate a single usage event into *cache* in-place.
 
@@ -206,4 +238,4 @@ def _apply_event(cache: dict, ev: _UsageEvent) -> None:
     entry["call_count"] += 1
 
 
-__all__ = ["TokenUsageBuffer", "_UsageEvent"]
+__all__ = ["TokenUsageBuffer", "_UsageEvent", "merge_usage_caches"]

@@ -42,8 +42,10 @@ async def get_coding_mode(request: Request) -> dict:
     loop = asyncio.get_running_loop()
     config = await loop.run_in_executor(
         None,
-        load_agent_config,
-        workspace.agent_id,
+        lambda: load_agent_config(
+            workspace.agent_id,
+            user_id=workspace.user_id,
+        ),
     )
     cm = config.coding_mode
     return {
@@ -76,17 +78,21 @@ async def post_coding_mode_toggle(
     loop = asyncio.get_running_loop()
     config = await loop.run_in_executor(
         None,
-        load_agent_config,
-        workspace.agent_id,
+        lambda: load_agent_config(
+            workspace.agent_id,
+            user_id=workspace.user_id,
+        ),
     )
 
     config.coding_mode.enabled = body.enabled
 
     await loop.run_in_executor(
         None,
-        save_agent_config,
-        config.id,
-        config,
+        lambda: save_agent_config(
+            config.id,
+            config,
+            user_id=workspace.user_id,
+        ),
     )
 
     # Reload the agent so the new coding_mode.enabled value is picked up:

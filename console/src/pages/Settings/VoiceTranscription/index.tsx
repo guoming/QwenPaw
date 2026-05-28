@@ -8,10 +8,12 @@ import {
   ProviderTypeCard,
   ProviderSelectCard,
 } from "./components";
+import { useSettingsWriteProps } from "../../../components/SettingsPageShell";
 import styles from "./index.module.less";
 
 function VoiceTranscriptionPage() {
   const { t } = useTranslation();
+  const writeProps = useSettingsWriteProps();
   const {
     loading,
     saving,
@@ -93,7 +95,12 @@ function VoiceTranscriptionPage() {
         >
           {t("common.reset")}
         </Button>
-        <Button type="primary" onClick={handleSave} loading={saving}>
+        <Button
+          type="primary"
+          onClick={handleSave}
+          loading={saving}
+          {...writeProps}
+        >
           {t("common.save")}
         </Button>
       </div>

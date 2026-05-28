@@ -31,34 +31,63 @@
 }
 
 // ─── Sidebar ─────────────────────────────────────────────────────────────────
+// Scrollable nav in .siderBody; login panel fixed in .siderFooter
+.siderInner {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.siderBody {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
+
+  &::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.18);
+    border-radius: 3px;
+  }
+
+  &::-webkit-scrollbar-thumb:hover {
+    background: rgba(0, 0, 0, 0.28);
+  }
+}
+
+.siderFooter {
+  flex: 0 0 auto;
+  z-index: 12;
+  background: #f9f8f4;
+  box-shadow: 0 -6px 12px rgba(43, 18, 0, 0.04);
+}
+
 .sider {
   background: #f9f8f4 !important;
-  overflow: auto;
-  height: calc(100vh - 64px);
+  overflow: hidden !important;
+  height: calc(100vh - 64px) !important;
+  max-height: calc(100vh - 64px) !important;
   padding: 0 16px;
   display: flex;
   flex-direction: column;
 
-  // Hide scrollbar in browser
-  &::-webkit-scrollbar {
-    display: none;
-    /* Safari and Chrome */
+  :global(.qwenpaw-layout-sider-children) {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    height: 100%;
+    overflow: hidden;
   }
-
-  &::-moz-scrollbar {
-    display: none;
-    /* Firefox */
-  }
-
-  &::-ms-scrollbar {
-    display: none;
-    /* IE/Edge */
-  }
-
-  scrollbar-width: none;
-  /* Firefox */
-  -ms-overflow-style: none;
-  /* IE and Edge */
 
   // Agent-scoped section: selector + Chat + Control + Workspace
   .agentScopedSection {
@@ -110,26 +139,8 @@
     background: rgba(43, 18, 0, 0.08);
   }
 
-  // Menu takes remaining space
   .sideMenu {
     flex: 1;
-    overflow-y: auto;
-
-    // Hide scrollbar for menu too
-    &::-webkit-scrollbar {
-      display: none;
-    }
-
-    &::-moz-scrollbar {
-      display: none;
-    }
-
-    &::-ms-scrollbar {
-      display: none;
-    }
-
-    scrollbar-width: none;
-    -ms-overflow-style: none;
   }
 
   &.siderCollapsed {
@@ -248,6 +259,23 @@
   background: #1a1a1a !important;
   border-right-color: rgba(255, 255, 255, 0.08) !important;
 
+  .siderFooter {
+    background: #1a1a1a;
+    box-shadow: 0 -6px 12px rgba(0, 0, 0, 0.35);
+  }
+
+  .siderBody {
+    scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
+
+    &::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.22);
+    }
+
+    &::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.35);
+    }
+  }
+
   // Agent-scoped section (dark mode)
   .agentScopedSection {
     background: rgba(255, 255, 255, 0.04);
@@ -358,31 +386,219 @@
   color: #ff7f16;
 }
 
-// ─── Auth actions (account + logout) ──────────────────────────────────────────
-.authActions {
-  padding: 12px 16px;
+// ─── Auth / user panel (bottom of sidebar) ───────────────────────────────────
+.userPanel {
+  flex-shrink: 0;
+  padding: 8px 4px 4px;
+  margin: 0 -4px 0;
   border-top: 1px solid #f0f0f0;
 }
 
-.authBtn {
+.userPanelCollapsed {
+  display: flex;
+  justify-content: center;
+  padding: 8px 0 4px;
+  border-top: 1px solid #f0f0f0;
+}
+
+.userTrigger {
   display: flex;
   align-items: center;
-  gap: 8px;
-  justify-content: flex-start;
-  color: rgba(0, 0, 0, 0.65);
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  padding: 8px 6px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.2s;
 
   &:hover {
-    color: rgba(0, 0, 0, 0.88) !important;
-    background: rgba(0, 0, 0, 0.04) !important;
+    background: rgba(0, 0, 0, 0.04);
   }
 }
 
-.authBtnCollapsed {
-  justify-content: center;
+.userTriggerMeta {
+  flex: 1;
+  min-width: 0;
 }
 
-.authBtn + .authBtn {
+.userTriggerChevron {
+  flex-shrink: 0;
+  color: rgba(0, 0, 0, 0.25);
+}
+
+.userAvatar {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #ff9d4d 0%, #ff7f16 100%);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+.userAvatarCollapsed {
+  margin-bottom: 0;
+}
+
+.userNameRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.userDisplayName {
+  font-size: 14px;
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.88);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.userAdminTag {
+  flex-shrink: 0;
+  margin: 0;
+  font-size: 11px;
+  line-height: 18px;
+  padding: 0 6px;
+  border-radius: 4px;
+}
+
+.userSubLine {
+  margin-top: 2px;
+  font-size: 11px;
+  color: rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.userStatusLine {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   margin-top: 4px;
+  font-size: 11px;
+  color: rgba(0, 0, 0, 0.55);
+}
+
+.userStatusDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #52c41a;
+  flex-shrink: 0;
+}
+
+.userDropdownOverlay {
+  :global(.qwenpaw-dropdown-menu) {
+    display: none;
+  }
+}
+
+.userDropdownPanel {
+  min-width: 220px;
+  max-width: 280px;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow:
+    0 6px 16px rgba(0, 0, 0, 0.08),
+    0 3px 6px rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+}
+
+.userDropdownHeader {
+  padding: 14px 16px 12px;
+}
+
+.userDropdownTitleRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.userDropdownTitle {
+  font-size: 15px;
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.88);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.userDropdownActions {
+  border-top: 1px solid #f0f0f0;
+  padding: 4px 0;
+}
+
+.userActionItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 16px;
+  border: none;
+  background: transparent;
+  color: rgba(0, 0, 0, 0.88);
+  font-size: 14px;
+  line-height: 22px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.2s;
+
+  svg {
+    flex-shrink: 0;
+    color: rgba(0, 0, 0, 0.45);
+  }
+
+  &:hover {
+    background: rgba(0, 0, 0, 0.04);
+  }
+
+  &:active {
+    background: rgba(0, 0, 0, 0.06);
+  }
+}
+
+.userLogoutBtn {
+  display: block;
+  width: 100%;
+  padding: 14px 16px;
+  border: none;
+  border-top: 1px solid #f0f0f0;
+  border-radius: 0;
+  background: #f5f5f5;
+  color: #ff4d4f;
+  font-size: 14px;
+  line-height: 22px;
+  text-align: center;
+  cursor: pointer;
+  transition:
+    background 0.2s,
+    color 0.2s;
+
+  &:hover {
+    background: #efefef;
+    color: #ff7875;
+  }
+
+  &:active {
+    background: #e8e8e8;
+    color: #cf1322;
+  }
 }
 
 /* Collapse Toggle Button */
@@ -410,19 +626,11 @@
 
 /* Collapsed nav (icon-only group list) */
 .collapsedNav {
-  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  padding: 4px 0;
-  overflow-y: auto;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-
-  &::-webkit-scrollbar {
-    display: none;
-  }
+  padding: 4px 0 8px;
 }
 
 .collapsedNavItem {
@@ -688,16 +896,72 @@
     color: #ff7f16;
   }
 
-  .authActions {
+  .userPanel,
+  .userPanelCollapsed {
     border-top-color: rgba(255, 255, 255, 0.08);
   }
 
-  .authBtn {
-    color: rgba(255, 255, 255, 0.75);
+  .userTrigger {
+    &:hover {
+      background: rgba(255, 255, 255, 0.06);
+    }
+  }
+
+  .userTriggerChevron {
+    color: rgba(255, 255, 255, 0.35);
+  }
+
+  .userDisplayName,
+  .userDropdownTitle {
+    color: rgba(255, 255, 255, 0.9);
+  }
+
+  .userSubLine {
+    color: rgba(255, 255, 255, 0.45);
+  }
+
+  .userStatusLine {
+    color: rgba(255, 255, 255, 0.55);
+  }
+
+  .userDropdownPanel {
+    background: #1e1e1e;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  }
+
+  .userDropdownActions {
+    border-top-color: rgba(255, 255, 255, 0.08);
+  }
+
+  .userActionItem {
+    color: rgba(255, 255, 255, 0.88);
+
+    svg {
+      color: rgba(255, 255, 255, 0.45);
+    }
 
     &:hover {
-      color: rgba(255, 255, 255, 0.9) !important;
-      background: rgba(255, 255, 255, 0.06) !important;
+      background: rgba(255, 255, 255, 0.06);
+    }
+
+    &:active {
+      background: rgba(255, 255, 255, 0.08);
+    }
+  }
+
+  .userLogoutBtn {
+    border-top-color: rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.06);
+    color: #ff7875;
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.1);
+      color: #ffa39e;
+    }
+
+    &:active {
+      background: rgba(255, 255, 255, 0.12);
+      color: #ff4d4f;
     }
   }
 

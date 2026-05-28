@@ -151,7 +151,10 @@ async def generate_and_update_title(
         from ...config.config import load_agent_config
 
         try:
-            cfg = load_agent_config(workspace.agent_id).running
+            cfg = load_agent_config(
+                workspace.agent_id,
+                user_id=workspace.user_id,
+            ).running
         except (ValueError, AppBaseException) as exc:
             logger.debug(
                 "Title generation skipped: agent config unavailable (%s)",

@@ -39,6 +39,12 @@ from typing import Any
 import httpx
 import pytest
 
+from tests.integration.auth_helpers import (
+    INTEG_TEST_ADMIN_PASSWORD,
+    INTEG_TEST_ADMIN_USER,
+    login,
+)
+
 _INTEGRATION_COVERAGE_DIR: Path | None = None
 _COVERAGE_SUBPROC_BASENAME = "integration_subproc"
 _COVERAGE_RCFILE_NAME = "coverage_subprocess.ini"
@@ -301,6 +307,18 @@ def app_server(  # pylint: disable=too-many-statements,too-many-branches
     secret_dir.mkdir(parents=True, exist_ok=True)
     backups_dir.mkdir(parents=True, exist_ok=True)
 
+    config_path = working_dir / "config.json"
+    if not config_path.exists():
+        config_path.write_text(
+            json.dumps(
+                {
+                    "security": {"allow_no_auth_hosts": []},
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
     env = os.environ.copy()
     for key in _SENSITIVE_ENV_VARS:
         env.pop(key, None)
@@ -308,7 +326,8 @@ def app_server(  # pylint: disable=too-many-statements,too-many-branches
     env["QWENPAW_WORKING_DIR"] = str(working_dir)
     env["QWENPAW_SECRET_DIR"] = str(secret_dir)
     env["QWENPAW_BACKUP_DIR"] = str(backups_dir)
-    env["QWENPAW_AUTH_ENABLED"] = "false"
+    env["QWENPAW_AUTH_USERNAME"] = INTEG_TEST_ADMIN_USER
+    env["QWENPAW_AUTH_PASSWORD"] = INTEG_TEST_ADMIN_PASSWORD
     env["NO_PROXY"] = "*"
     env["PYTHONUNBUFFERED"] = "1"
     # Force UTF-8 stdio in the subprocess so non-ASCII log lines (e.g.
@@ -395,6 +414,15 @@ def app_server(  # pylint: disable=too-many-statements,too-many-branches
                     f"last_error={last_error}\n"
                     f"logs:\n{''.join(logs)[-4000:]}",
                 )
+
+            base_url = f"http://{host}:{port}"
+            token = login(
+                client,
+                base_url,
+                INTEG_TEST_ADMIN_USER,
+                INTEG_TEST_ADMIN_PASSWORD,
+            )
+            client.headers["Authorization"] = f"Bearer {token}"
 
             yield AppServer(
                 host=host,

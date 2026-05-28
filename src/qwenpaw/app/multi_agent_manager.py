@@ -13,10 +13,15 @@ from agentscope_runtime.engine.schemas.exception import (
     ConfigurationException,
 )
 
+from .user_agent_registry import ensure_user_agent_copy
 from .workspace import Workspace
 from ..config.utils import load_config
 
 logger = logging.getLogger(__name__)
+
+
+def _agent_cache_key(agent_id: str, user_id: str | None = None) -> str:
+    return f"{agent_id}:{user_id}" if user_id else agent_id
 
 
 class MultiAgentManager:
@@ -39,45 +44,37 @@ class MultiAgentManager:
         self._cleanup_tasks: Set[asyncio.Task] = set()
         logger.debug("MultiAgentManager initialized")
 
-    async def get_agent(self, agent_id: str) -> Workspace:
+    async def get_agent(
+        self,
+        agent_id: str,
+        user_id: str | None = None,
+    ) -> Workspace:
         """Get agent workspace by ID (lazy loading with dedup).
-
-        If workspace doesn't exist in memory, it will be created and started.
-        Multiple concurrent callers for the same agent_id are coordinated:
-        the first caller creates the workspace while others wait.
-
-        The lock is only held briefly for dict checks/mutations, not during
-        the slow workspace startup, allowing parallel agent initialization.
 
         Args:
             agent_id: Agent ID to retrieve
+            user_id: Optional user ID for per-user runtime isolation
 
         Returns:
             Workspace: The requested workspace instance
-
-        Raises:
-            ConfigurationException: If agent ID not found in configuration
         """
-        # Fast path: already loaded (no lock)
-        if agent_id in self.agents:
-            logger.debug(f"Returning cached agent: {agent_id}")
-            return self.agents[agent_id]
+        cache_key = _agent_cache_key(agent_id, user_id)
+
+        if cache_key in self.agents:
+            logger.debug(f"Returning cached agent: {cache_key}")
+            return self.agents[cache_key]
 
         should_start = False
         event = None
         agent_ref = None
 
         async with self._lock:
-            # Re-check under lock
-            if agent_id in self.agents:
-                logger.debug(f"Returning cached agent: {agent_id}")
-                return self.agents[agent_id]
+            if cache_key in self.agents:
+                return self.agents[cache_key]
 
-            if agent_id in self._pending_starts:
-                # Another task is already starting this agent; wait for it
-                event = self._pending_starts[agent_id]
+            if cache_key in self._pending_starts:
+                event = self._pending_starts[cache_key]
             else:
-                # We are the first caller — validate config and claim startup
                 config = load_config()
                 if agent_id not in config.agents.profiles:
                     raise ConfigurationException(
@@ -90,26 +87,27 @@ class MultiAgentManager:
                     )
                 agent_ref = config.agents.profiles[agent_id]
                 event = asyncio.Event()
-                self._pending_starts[agent_id] = event
+                self._pending_starts[cache_key] = event
                 should_start = True
 
         if not should_start:
-            # Wait for the in-progress startup to finish
             await event.wait()
-            if agent_id in self.agents:
-                logger.debug(f"Returning cached agent: {agent_id}")
-                return self.agents[agent_id]
+            if cache_key in self.agents:
+                return self.agents[cache_key]
             raise ConfigurationException(
                 config_key="agent",
                 message=f"Agent '{agent_id}' failed to initialize",
             )
 
-        # We are the starter — create outside the lock for parallelism
+        if user_id:
+            ensure_user_agent_copy(user_id, agent_id)
+
         t0 = time.perf_counter()
-        logger.debug(f"Creating new workspace: {agent_id}")
+        logger.debug(f"Creating new workspace: {cache_key}")
         instance = Workspace(
             agent_id=agent_id,
             workspace_dir=agent_ref.workspace_dir,
+            user_id=user_id,
         )
 
         try:
@@ -117,22 +115,20 @@ class MultiAgentManager:
             instance.set_manager(self)
 
             async with self._lock:
-                self.agents[agent_id] = instance
+                self.agents[cache_key] = instance
 
             elapsed = time.perf_counter() - t0
             logger.debug(
-                f"Workspace created and started: {agent_id} "
+                f"Workspace created and started: {cache_key} "
                 f"({elapsed:.3f}s)",
             )
             return instance
         except Exception as e:
-            logger.error(f"Failed to start workspace {agent_id}: {e}")
+            logger.error(f"Failed to start workspace {cache_key}: {e}")
             raise
         finally:
-            # Always clean up pending state and signal waiters
-            # This handles cancellation (CancelledError) and all other cases
             async with self._lock:
-                self._pending_starts.pop(agent_id, None)
+                self._pending_starts.pop(cache_key, None)
             event.set()
 
     async def _graceful_stop_old_instance(
@@ -232,66 +228,103 @@ class MultiAgentManager:
                     f"New instance is active and serving requests.",
                 )
 
-    async def stop_agent(self, agent_id: str) -> bool:
-        """Stop a specific agent instance.
+    async def stop_agent(
+        self,
+        agent_id: str,
+        user_id: str | None = None,
+    ) -> bool:
+        """Stop agent instance(s).
 
-        Args:
-            agent_id: Agent ID to stop
-
-        Returns:
-            bool: True if agent was stopped, False if not running
+        When *user_id* is omitted, stops all cached instances for *agent_id*.
         """
+        if user_id is not None:
+            return await self._stop_cache_key(
+                _agent_cache_key(agent_id, user_id),
+            )
+
+        stopped = False
+        keys = [
+            key
+            for key in list(self.agents.keys())
+            if key == agent_id or key.startswith(f"{agent_id}:")
+        ]
+        for key in keys:
+            if await self._stop_cache_key(key):
+                stopped = True
+        return stopped
+
+    async def _stop_cache_key(self, cache_key: str) -> bool:
         async with self._lock:
-            if agent_id not in self.agents:
-                logger.warning(f"Agent not running: {agent_id}")
+            if cache_key not in self.agents:
+                logger.warning(f"Agent not running: {cache_key}")
                 return False
 
-            instance = self.agents[agent_id]
+            instance = self.agents[cache_key]
             await instance.stop()
-            del self.agents[agent_id]
-            logger.info(f"Agent stopped and removed: {agent_id}")
+            del self.agents[cache_key]
+            logger.info(f"Agent stopped and removed: {cache_key}")
             return True
 
-    async def reload_agent(self, agent_id: str) -> bool:
-        """Reload a specific agent instance with zero-downtime.
+    def _cache_keys_for_agent(
+        self,
+        agent_id: str,
+        user_id: str | None = None,
+    ) -> list[str]:
+        """Return running cache keys for ``agent_id``.
 
-        This method performs a seamless reload by:
-        1. Creating and fully starting a new workspace instance (no lock)
-        2. Atomically replacing the old instance with the new one (with lock)
-        3. Gracefully stopping the old instance (no lock):
-           - If active tasks exist: schedule delayed cleanup in background
-           - If no active tasks: stop immediately
+        When ``user_id`` is provided, returns only that user's cache key.
+        """
+        if user_id:
+            key = _agent_cache_key(agent_id, user_id)
+            return [key] if key in self.agents else []
+        prefix = f"{agent_id}:"
+        return [
+            key
+            for key in self.agents
+            if key == agent_id or key.startswith(prefix)
+        ]
 
-        The lock is only held during the atomic swap to minimize blocking
-        time for other agent operations.
+    async def reload_agent(
+        self,
+        agent_id: str,
+        user_id: str | None = None,
+    ) -> bool:
+        """Reload running workspace instances for ``agent_id``.
 
-        This ensures that:
-        - New requests are immediately handled by the new instance
-        - Ongoing SSE/streaming tasks continue uninterrupted
-        - Other agents remain accessible during reload
-        - The manager returns quickly without waiting for old tasks
-        - Old instance is automatically cleaned up after tasks complete
-
-        Args:
-            agent_id: Agent ID to reload
+        When per-user isolation is enabled, each ``agent_id:user_id`` entry
+        is reloaded independently. If ``user_id`` is provided, only that
+        user-specific workspace is reloaded.
 
         Returns:
-            bool: True if agent was reloaded, False if not running
+            bool: True if at least one instance was reloaded
         """
-        # Step 1: Check if agent exists (quick check with lock)
         async with self._lock:
-            if agent_id not in self.agents:
-                logger.debug(
-                    f"Agent not running, will be loaded on next "
-                    f"request: {agent_id}",
-                )
+            keys = self._cache_keys_for_agent(agent_id, user_id=user_id)
+
+        if not keys:
+            logger.debug(
+                "Agent not running, will be loaded on next request: %s",
+                agent_id,
+            )
+            return False
+
+        reloaded = False
+        for cache_key in keys:
+            if await self._reload_cache_key(cache_key):
+                reloaded = True
+        return reloaded
+
+    async def _reload_cache_key(self, cache_key: str) -> bool:
+        """Reload a single cached workspace by cache key."""
+        async with self._lock:
+            if cache_key not in self.agents:
                 return False
-            old_instance = self.agents[agent_id]
+            old_instance = self.agents[cache_key]
 
-        logger.info(f"Reloading agent (zero-downtime): {agent_id}")
+        agent_id = old_instance.agent_id
+        user_id = old_instance.user_id
+        logger.info("Reloading agent (zero-downtime): %s", cache_key)
 
-        # Step 1.5: Stop old config watcher (no-op if it triggered
-        # this reload, since it already disabled itself).
         try:
             # pylint: disable=protected-access
             old_watcher = old_instance._service_manager.services.get(
@@ -302,83 +335,55 @@ class MultiAgentManager:
                 await old_watcher.stop()
         except Exception as stop_err:
             logger.warning(
-                f"Failed to stop old AgentConfigWatcher for "
-                f"{agent_id}: {stop_err}.",
+                "Failed to stop old AgentConfigWatcher for %s: %s",
+                cache_key,
+                stop_err,
             )
 
-        # Step 2: Load configuration (outside lock)
         config = load_config()
         if agent_id not in config.agents.profiles:
             logger.error(
-                f"Agent '{agent_id}' not found in configuration "
-                f"during reload",
+                "Agent '%s' not found in configuration during reload",
+                agent_id,
             )
             return False
 
         agent_ref = config.agents.profiles[agent_id]
-
-        # Step 3: Create and start new workspace instance (outside lock)
-        # This is the slow part, but doesn't block other agents
-        logger.info(f"Creating new workspace instance: {agent_id}")
         new_instance = Workspace(
             agent_id=agent_id,
             workspace_dir=agent_ref.workspace_dir,
+            user_id=user_id,
         )
 
-        # Step 3.5: Set reusable components from old instance (if any)
-        async with self._lock:
-            old_instance = self.agents.get(agent_id)
-
-        if old_instance:
-            # Get all reusable services from old instance's ServiceManager
-            # pylint: disable=protected-access
-            reusable = old_instance._service_manager.get_reusable_services()
-            # pylint: enable=protected-access
-
-            if reusable:
-                await new_instance.set_reusable_components(reusable)
-                logger.info(
-                    f"Set reusable components for {agent_id}: "
-                    f"{list(reusable.keys())}",
-                )
+        # pylint: disable=protected-access
+        reusable = old_instance._service_manager.get_reusable_services()
+        # pylint: enable=protected-access
+        if reusable:
+            await new_instance.set_reusable_components(reusable)
 
         try:
             await new_instance.start()
-            new_instance.set_manager(self)  # Set manager reference
-            logger.info(f"New workspace instance started: {agent_id}")
+            new_instance.set_manager(self)
         except Exception as e:
             logger.exception(
-                f"Failed to start new workspace instance for {agent_id}: {e}",
+                "Failed to start new workspace for %s: %s",
+                cache_key,
+                e,
             )
-            # Try to clean up the failed new instance
             try:
                 await new_instance.stop()
             except Exception:
-                pass  # Best effort cleanup
-            # Old instance is still running and serving requests
+                pass
             return False
 
-        # Step 4: Atomic swap (minimal lock time)
-        # From this point, reload is considered successful
         async with self._lock:
-            # Double-check agent still exists
-            if agent_id not in self.agents:
-                logger.warning(
-                    f"Agent {agent_id} was removed during reload, "
-                    f"stopping new instance",
-                )
+            if cache_key not in self.agents:
                 await new_instance.stop()
                 return False
+            old_instance = self.agents[cache_key]
+            self.agents[cache_key] = new_instance
 
-            # Swap instances atomically
-            old_instance = self.agents[agent_id]
-            self.agents[agent_id] = new_instance
-            logger.info(f"Workspace instance replaced: {agent_id}")
-
-        # Step 5: Gracefully stop old instance (outside lock)
-        # Delegates to helper method to avoid too-many-statements
         await self._graceful_stop_old_instance(old_instance, agent_id)
-
         return True
 
     async def cancel_all_cleanup_tasks(self) -> None:

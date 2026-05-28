@@ -617,7 +617,15 @@ class ChannelManager:
                     " on ChannelManager",
                 )
 
-            agent_config = load_agent_config(agent_id)
+            user_id = (
+                self._workspace.user_id
+                if self._workspace is not None
+                else None
+            )
+            agent_config = load_agent_config(
+                agent_id,
+                user_id=user_id,
+            )
             channels_cfg = agent_config.channels
             if channels_cfg is None:
                 raise RuntimeError(

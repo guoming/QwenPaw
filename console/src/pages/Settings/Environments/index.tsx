@@ -7,6 +7,7 @@ import { useEnvVars } from "./useEnvVars";
 import { EmptyState, AddButton, Toolbar, EnvRow, type Row } from "./components";
 import { PageHeader } from "@/components/PageHeader";
 import { useAppMessage } from "../../../hooks/useAppMessage";
+import { useSettingsWritable } from "../../../components/SettingsPageShell";
 import styles from "./index.module.less";
 
 /* ------------------------------------------------------------------ */
@@ -29,6 +30,7 @@ function shiftIndices(prev: Set<number>, removedIdx: number): Set<number> {
 
 function EnvironmentsPage() {
   const { t } = useTranslation();
+  const writable = useSettingsWritable();
   const { message } = useAppMessage();
   const { envVars, loading, error, fetchAll } = useEnvVars();
   const [rows, setRows] = useState<Row[] | null>(null);
@@ -293,6 +295,7 @@ function EnvironmentsPage() {
             onRemoveSelected={removeSelected}
             onReset={handleReset}
             onSave={handleSave}
+            readOnly={!writable}
           />
 
           {/* ---- Rows ---- */}
@@ -315,7 +318,7 @@ function EnvironmentsPage() {
           </div>
 
           {/* ---- Add button ---- */}
-          <AddButton onClick={addRow} />
+          <AddButton onClick={addRow} disabled={!writable} />
         </div>
       )}
     </div>

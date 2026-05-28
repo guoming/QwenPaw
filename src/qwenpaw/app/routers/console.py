@@ -69,7 +69,10 @@ def _extract_placeholder_name(content_parts: list) -> tuple[str, str]:
     return first_text[:10], first_text
 
 
-def _extract_session_and_payload(request_data: Union[AgentRequest, dict]):
+def _extract_session_and_payload(
+    request_data: Union[AgentRequest, dict],
+    auth_user_id: str | None = None,
+):
     """Extract run_key (ChatSpec.id), session_id, and native payload.
 
     run_key must be ChatSpec.id (chat_id) so it matches list_chats/get_chat.
@@ -93,6 +96,9 @@ def _extract_session_and_payload(request_data: Union[AgentRequest, dict]):
             elif isinstance(content_part, dict) and "content" in content_part:
                 content_parts.extend(content_part["content"] or [])
 
+    if auth_user_id and channel_id == "console":
+        sender_id = f"console:{auth_user_id}"
+
     native_payload = {
         "channel_id": channel_id,
         "sender_id": sender_id,
@@ -100,6 +106,7 @@ def _extract_session_and_payload(request_data: Union[AgentRequest, dict]):
         "meta": {
             "session_id": session_id,
             "user_id": sender_id,
+            "auth_user_id": auth_user_id or "",
         },
     }
     return native_payload
@@ -154,7 +161,13 @@ async def post_console_chat(
             detail="Channel Console not found",
         )
     try:
-        native_payload = _extract_session_and_payload(request_data)
+        from ..deps import get_request_user_id
+
+        auth_user_id = get_request_user_id(request)
+        native_payload = _extract_session_and_payload(
+            request_data,
+            auth_user_id=auth_user_id,
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     session_id = console_channel.resolve_session_id(
@@ -346,6 +359,7 @@ async def get_backend_debug_logs(
 
 @router.get("/push-messages")
 async def get_push_messages(
+    request: Request,
     session_id: str | None = Query(None, description="Optional session id"),
 ):
     """
@@ -362,18 +376,23 @@ async def get_push_messages(
     """
     from ..console_push_store import get_recent, take
     from ..approvals import get_approval_service
+    from ..deps import get_request_user_id
 
-    # Get messages (session-specific or global)
+    auth_user_id = get_request_user_id(request)
+
     if session_id:
-        messages = await take(session_id)
+        messages = await take(session_id, auth_user_id=auth_user_id)
     else:
-        messages = await get_recent()
+        messages = await get_recent(auth_user_id=auth_user_id)
 
-    # Get ALL pending approvals (not filtered by session)
     approval_svc = get_approval_service()
     # pylint: disable=protected-access
     async with approval_svc._lock:
-        all_pending = list(approval_svc._pending.values())
+        all_pending = [
+            p
+            for p in approval_svc._pending.values()
+            if not p.auth_user_id or p.auth_user_id == auth_user_id
+        ]
 
     # Serialize approval data with root_session_id for frontend filtering
     approvals_data = [
@@ -399,6 +418,7 @@ async def get_push_messages(
 
 @router.get("/inbox/events")
 async def get_inbox_events(
+    request: Request,
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
     source_type: str | None = Query(None),
@@ -406,8 +426,10 @@ async def get_inbox_events(
     agent_id: str | None = Query(None),
     unread_only: bool = Query(False),
 ):
+    from ..deps import get_request_user_id
     from ..inbox_store import list_events
 
+    user_id = get_request_user_id(request)
     events = await list_events(
         limit=limit,
         offset=offset,
@@ -415,27 +437,38 @@ async def get_inbox_events(
         status=status,
         agent_id=agent_id,
         unread_only=unread_only,
+        user_id=user_id,
     )
     return {"events": events}
 
 
 @router.post("/inbox/read")
-async def post_mark_inbox_read(payload: MarkInboxReadRequest):
+async def post_mark_inbox_read(
+    request: Request,
+    payload: MarkInboxReadRequest,
+):
+    from ..deps import get_request_user_id
     from ..inbox_store import mark_all_read, mark_read
 
+    user_id = get_request_user_id(request)
     if payload.all:
-        updated = await mark_all_read()
+        updated = await mark_all_read(user_id=user_id)
     else:
-        updated = await mark_read(payload.event_ids)
+        updated = await mark_read(payload.event_ids, user_id=user_id)
     return {"updated": updated}
 
 
 @router.delete("/inbox/events/{event_id}")
-async def delete_inbox_event(event_id: str):
+async def delete_inbox_event(request: Request, event_id: str):
+    from ..deps import get_request_user_id
     from ..inbox_store import delete_event
     from ..inbox_trace_store import delete_trace
 
-    deleted, run_id, run_id_still_referenced = await delete_event(event_id)
+    user_id = get_request_user_id(request)
+    deleted, run_id, run_id_still_referenced = await delete_event(
+        event_id,
+        user_id=user_id,
+    )
     if not deleted:
         raise HTTPException(status_code=404, detail="event not found")
     trace_deleted = False

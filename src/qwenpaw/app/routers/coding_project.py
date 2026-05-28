@@ -38,16 +38,20 @@ def _projects_base(workspace_dir: Path) -> Path:
     return workspace_dir / CODING_PROJECT_SUBDIR
 
 
-def _save_project_dir(agent_id: str, project_dir: str | None) -> None:
+def _save_project_dir(
+    agent_id: str,
+    project_dir: str | None,
+    user_id: str | None = None,
+) -> None:
     """Persist coding_mode.project_dir to agent.json (sync).
 
     Intended to run inside an executor thread.
     """
     from ...config.config import load_agent_config, save_agent_config
 
-    config = load_agent_config(agent_id)
+    config = load_agent_config(agent_id, user_id=user_id)
     config.coding_mode.project_dir = project_dir
-    save_agent_config(config.id, config)
+    save_agent_config(config.id, config, user_id=user_id)
 
 
 # ---------------------------------------------------------------------------
@@ -122,7 +126,12 @@ async def set_project(body: SetProjectRequest, request: Request) -> dict:
     else:
         project_dir = None  # reset to workspace default
 
-    await asyncio.to_thread(_save_project_dir, workspace.agent_id, project_dir)
+    await asyncio.to_thread(
+        _save_project_dir,
+        workspace.agent_id,
+        project_dir,
+        workspace.user_id,
+    )
 
     coding_dir = Path(project_dir) if project_dir else workspace.workspace_dir
     return {
@@ -167,6 +176,7 @@ async def create_project(body: CreateProjectRequest, request: Request) -> dict:
         _save_project_dir,
         workspace.agent_id,
         str(project_path),
+        workspace.user_id,
     )
 
     return {
@@ -251,7 +261,12 @@ async def clone_project(
                 return
 
             # Set as active project
-            await asyncio.to_thread(_save_project_dir, agent_id, str(target))
+            await asyncio.to_thread(
+                _save_project_dir,
+                agent_id,
+                str(target),
+                workspace.user_id,
+            )
 
             payload = json.dumps(
                 {"type": "done", "path": str(target), "name": target.name},
@@ -345,6 +360,7 @@ async def import_local(body: ImportLocalRequest, request: Request) -> dict:
         _save_project_dir,
         workspace.agent_id,
         str(project_path),
+        workspace.user_id,
     )
 
     return {
@@ -417,6 +433,7 @@ async def upload_zip(
         _save_project_dir,
         workspace.agent_id,
         str(project_path),
+        workspace.user_id,
     )
     return {"path": str(project_path), "name": project_path.name}
 

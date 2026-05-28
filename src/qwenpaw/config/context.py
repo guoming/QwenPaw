@@ -130,3 +130,19 @@ def set_current_session_id(session_id: str | None) -> None:
         session_id: Session ID to store in context.
     """
     current_session_id.set(session_id)
+
+
+current_user_id: ContextVar[str | None] = ContextVar(
+    "current_user_id",
+    default=None,
+)
+
+
+def get_current_user_id() -> str | None:
+    """Get the authenticated console user id from context."""
+    return current_user_id.get()
+
+
+def set_current_user_id(user_id: str | None) -> None:
+    """Set the authenticated console user id in context."""
+    current_user_id.set(user_id)

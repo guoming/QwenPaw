@@ -7,7 +7,6 @@ import os
 import click
 import uvicorn
 
-from ..app.auth import is_auth_enabled
 from ..constant import LOG_LEVEL_ENV
 from ..config.utils import write_last_api
 from ..utils.http import is_loopback_host
@@ -25,22 +24,22 @@ def _format_bind_address(host: str, port: int) -> str:
     return f"{normalized_host}:{port}"
 
 
-def _warn_if_auth_off_non_loopback_bind(host: str, port: int) -> None:
-    """Warn when QwenPaw is reachable beyond loopback without auth."""
-    if is_auth_enabled() or is_loopback_host(host):
+def _warn_if_public_bind(host: str, port: int) -> None:
+    """Warn when QwenPaw listens beyond loopback (login still required)."""
+    if is_loopback_host(host):
         return
 
     bind_address = _format_bind_address(host, port)
     warning = f"""
 ============================================================
-SECURITY NOTICE: QwenPaw is bound to {bind_address} without authentication.
+SECURITY NOTICE: QwenPaw is bound to {bind_address}.
 
-Anyone who can reach this address may access QwenPaw APIs without login.
+Anyone who can reach this address may attempt login. Use strong credentials
+and restrict network access to trusted clients.
 
 Recommended:
   - Restrict access to a trusted network interface or protected environment.
-  - Enable authentication with QWENPAW_AUTH_ENABLED=true if untrusted users or
-    processes may reach this address.
+  - Set QWENPAW_AUTH_USERNAME / QWENPAW_AUTH_PASSWORD for automated deploys.
 ============================================================
 """.strip()
     if logger.isEnabledFor(logging.WARNING):
@@ -138,7 +137,7 @@ def app_cmd(
             SuppressPathAccessLogFilter(paths),
         )
 
-    _warn_if_auth_off_non_loopback_bind(host, port)
+    _warn_if_public_bind(host, port)
 
     uvicorn.run(
         "qwenpaw.app._app:app",

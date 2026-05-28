@@ -39,6 +39,7 @@ from ...agents.utils.file_handling import (
     read_text_file_with_encoding_fallback,
 )
 from ...config.config import load_agent_config
+from ...config.context import set_current_user_id
 from ...constant import WORKING_DIR
 
 if TYPE_CHECKING:
@@ -132,7 +133,8 @@ class AgentRunner(Runner):
         """Agent display name from config, cached after first access."""
         if self._agent_name is None:
             try:
-                cfg = load_agent_config(self.agent_id)
+                uid = getattr(self._workspace, "user_id", None)
+                cfg = load_agent_config(self.agent_id, user_id=uid)
                 self._agent_name = cfg.name if cfg and cfg.name else "QwenPaw"
             except Exception:
                 self._agent_name = "QwenPaw"
@@ -389,6 +391,9 @@ class AgentRunner(Runner):
 
         set_current_agent_id(self.agent_id)
 
+        ws_uid = getattr(self._workspace, "user_id", None) if self._workspace else None
+        set_current_user_id(ws_uid)
+
         # Set session_id in context for token usage tracking
         set_current_session_id(session_id)
 
@@ -422,8 +427,10 @@ class AgentRunner(Runner):
                 channel_meta = {}
             user_name = channel_meta.get("user_name")
 
-            # Load agent-specific configuration
-            agent_config = load_agent_config(self.agent_id)
+            agent_config = load_agent_config(
+                self.agent_id,
+                user_id=ws_uid,
+            )
 
             _configured_shell = (
                 agent_config.running.shell_command_executable or None

@@ -126,7 +126,8 @@ Fixture 行为:
 
 - 启动前清理 11 个敏感环境变量(`OPENAI_API_KEY`、`DASHSCOPE_API_KEY`、
   各 IM token 等)
-- 强制 `QWENPAW_AUTH_ENABLED=false` 与 `NO_PROXY=*`
+- 通过 `QWENPAW_AUTH_USERNAME` / `QWENPAW_AUTH_PASSWORD` 自动注册管理员，并为 HTTP 客户端设置 `Authorization`
+- 设置 `NO_PROXY=*`
 - 通过 `socket.bind(0)` 分配空闲端口
 - 轮询 `/api/version` 最长 60 秒作为就绪信号
 - 关停时使用 **SIGINT**(不是 SIGTERM),让 uvicorn 的 atexit 钩子能正常
