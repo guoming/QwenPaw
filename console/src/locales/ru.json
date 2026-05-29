@@ -1835,7 +1835,7 @@
     }
   },
   "login": {
-    "title": "Вход в QwenPaw",
+    "title": "Вход в arkbuddy",
     "registerTitle": "Создание аккаунта",
     "firstUserHint": "Создайте учётную запись администратора для начала работы",
     "usernamePlaceholder": "Имя пользователя",
