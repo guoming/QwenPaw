@@ -151,30 +151,28 @@ def seed_agent_for_user(user_id: str, agent_id: str) -> None:
     logger.debug("Seeded agent %s for user %s", agent_id, user_id)
 
 
-def _generate_unique_user_agent_id(existing_ids: set[str]) -> str:
-    """Return a private agent id (``u_<shortid>``) not in *existing_ids*."""
-    from ..config.config import generate_short_agent_id
-
-    for _ in range(32):
-        candidate = f"u_{generate_short_agent_id()}"
-        if candidate not in existing_ids:
-            return candidate
-    raise RuntimeError("Failed to generate unique user agent id")
-
-
 def provision_private_agent_from_template(
     user_id: str,
     template_agent_id: str,
 ) -> str:
-    """Copy a global template into a new user-owned agent instance."""
+    """Copy a global template into a new user-owned agent instance.
+
+    The private agent reuses *template_agent_id* as its id so per-user
+    workspace folders match the default layout
+    (``agent_workspaces/<template_agent_id>``).
+    """
     from ..config.config import load_agent_config, save_agent_config
 
     config = load_config()
     if template_agent_id not in config.agents.profiles:
         raise ValueError(f"Unknown template agent: {template_agent_id}")
 
-    reserved = set(config.agents.profiles.keys()) | set(list_user_agent_ids(user_id))
-    new_id = _generate_unique_user_agent_id(reserved)
+    if template_agent_id in list_user_agent_ids(user_id):
+        raise ValueError(
+            f"Agent '{template_agent_id}' already exists for this user",
+        )
+
+    new_id = template_agent_id
 
     template_cfg = load_agent_config(template_agent_id, user_id=None)
     user_ws = resolve_user_workspace_dir(user_id, new_id)

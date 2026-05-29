@@ -4,6 +4,7 @@ import json
 import pytest
 
 from qwenpaw.app.user_agent_registry import (
+    provision_private_agent_from_template,
     purge_agent_for_all_users,
     seed_agent_for_user,
     seed_all_agents_for_user,
@@ -73,6 +74,21 @@ def test_seed_does_not_copy_runtime_chat_state(registry_env):
     assert not (data_dir / "chats.json").exists()
     assert not (data_dir / "jobs.json").exists()
     assert not (data_dir / "sessions").exists()
+
+
+def test_provision_private_agent_uses_template_id(registry_env):
+    users = registry_env
+    agent_id = provision_private_agent_from_template("u5", "a1")
+    assert agent_id == "a1"
+    user_ws = users / "u5" / "agent_workspaces" / "a1"
+    assert user_ws.is_dir()
+    assert (users / "u5" / "agent_configs" / "a1" / "agent.json").is_file()
+
+
+def test_provision_private_agent_rejects_duplicate(registry_env):
+    provision_private_agent_from_template("u6", "a1")
+    with pytest.raises(ValueError, match="already exists"):
+        provision_private_agent_from_template("u6", "a1")
 
 
 def test_seed_all_and_purge(registry_env):

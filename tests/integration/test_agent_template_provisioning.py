@@ -46,8 +46,7 @@ def test_non_admin_can_create_private_agent_from_template(
     )
     assert create_resp.status_code == 201, app_server.logs_tail()
     created_id = create_resp.json()["id"]
-    assert created_id.startswith("u_")
-    assert created_id != "default"
+    assert created_id == "default"
 
     list_resp = app_server.api_request(
         "GET",
@@ -58,7 +57,7 @@ def test_non_admin_can_create_private_agent_from_template(
     assert created_id in ids
 
 
-def test_same_template_can_provision_multiple_private_agents(
+def test_same_template_cannot_provision_twice(
     app_server: AppServer,
 ) -> None:
     token = register(
@@ -80,12 +79,9 @@ def test_same_template_can_provision_multiple_private_agents(
         headers=auth_headers(token),
     )
     assert first.status_code == 201, app_server.logs_tail()
-    assert second.status_code == 201, app_server.logs_tail()
-    first_id = first.json()["id"]
-    second_id = second.json()["id"]
-    assert first_id != second_id
-    assert first_id.startswith("u_")
-    assert second_id.startswith("u_")
+    assert second.status_code == 409, app_server.logs_tail()
+    assert first.json()["id"] == "default"
+    assert "already exists" in second.json()["detail"].lower()
 
 
 def test_private_agent_agent_scoped_status(app_server: AppServer) -> None:
