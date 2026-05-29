@@ -518,7 +518,10 @@ async def create_agent_from_template(
     try:
         private_id = provision_private_agent_from_template(user_id, template_id)
     except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        detail = str(exc)
+        if "already exists" in detail:
+            raise HTTPException(status_code=409, detail=detail) from exc
+        raise HTTPException(status_code=404, detail=detail) from exc
 
     user_cfg = load_agent_config(private_id, user_id=user_id)
     if payload.name is not None:
